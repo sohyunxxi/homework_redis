@@ -34,7 +34,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         }
 
         const user = rows[0];
-        console.log(user)
+        console.log(user.id, user.idx)
         // 토큰 생성
         const token = jwt.sign(
             { 
@@ -44,15 +44,18 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             process.env.SECRET_KEY,
             {
                 "issuer":user.id,
-                "expiresIn":"1m"
+                "expiresIn":"10m"
             }
         );
-
+        console.log(token)
         result.success = true;
         result.message = '로그인 성공';
         result.data = user;
-        result.data.token = token
+        result.data.token = token;
 
+        // 쿠키에 토큰 설정
+        res.cookie("token", token, { httpOnly: true, secure: false });
+        console.log(req.cookies)
         const logData = {
             ip: req.ip,
             userId: id,
@@ -74,9 +77,12 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
     }
 });
 
+
 // 로그아웃 API
-router.post('/logout', loginCheck, async (req, res, next) => {
-    const id = req.user.id; // 사용자 정보는 loginCheck 미들웨어에서 req.user에 저장
+router.post('/logout', isLogin, async (req, res, next) => {
+    console.log(1)
+    console.log(req.user)
+    const id = req.user.id;
     const result = {
         success: false,
         message: '로그아웃 실패',
@@ -95,31 +101,15 @@ router.post('/logout', loginCheck, async (req, res, next) => {
 
     makeLog(req, res, logData, next);
 
-    // 클라이언트에서 전달된 토큰을 검증하는 로직 추가
-    const token = req.headers.token;
-
-    if (!token) {
-        return next({
-            status: 401,
-            message: '토큰이 없습니다.'
-        });
-    }
-
-    // 토큰이 유효하면 로그아웃 성공 처리
-    jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
-        if (err) {
-            return next({
-                status: 401,
-                message: '토큰 검증 실패'
-            });
-        }
-
+    try {
+        res.clearCookie("token");
         result.success = true;
         result.message = '로그아웃 성공';
         res.status(200).json(result);
-    });
+    } catch (error) {
+        next(error);
+    }
 });
-
 
 // id 찾기 API
 router.get("/findid", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'),async (req, res, next) => {
@@ -276,7 +266,7 @@ router.post("/", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'), 
 });
 
 // 회원정보 보기 API
-router.get("/my", loginCheck, async (req, res, next) => {
+router.get("/my", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
@@ -325,10 +315,10 @@ router.get("/my", loginCheck, async (req, res, next) => {
 });
 
 // 회원정보 수정 API
-router.put("/my", loginCheck,checkPattern(pwReq, 'pw'), checkPattern(genderReq,'gender'), checkPattern(birthReq, 'birth'),checkPattern(telReq,'tel'), checkPattern(addressReq, 'address'), async (req, res, next) => {
+router.put("/my", isLogin,checkPattern(pwReq, 'pw'), checkPattern(genderReq,'gender'), checkPattern(birthReq, 'birth'),checkPattern(telReq,'tel'), checkPattern(addressReq, 'address'), async (req, res, next) => {
     const { pw, tel, birth, gender, address } = req.body;
-    const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
-    const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
+    const userIdx = req.user.idx; 
+    const userId = req.user.id; 
 
     const result = {
         success: false,
@@ -371,7 +361,7 @@ router.put("/my", loginCheck,checkPattern(pwReq, 'pw'), checkPattern(genderReq,'
 });
 
 // 회원정보 삭제 API
-router.delete("/my", loginCheck, async (req, res, next) => {
+router.delete("/my", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
@@ -412,9 +402,9 @@ router.delete("/my", loginCheck, async (req, res, next) => {
 
         // makeLog 함수에 로그 데이터 전달
         makeLog(req, res, logData, next);
+        res.clearCookie("token");
 
-        // 클라이언트에게는 로그아웃 메시지만 전송하므로 토큰 검증이 필요 없음
-        result.message = '로그아웃 성공';
+        result.message = '회원탈퇴 성공';
         res.send(result);
     } catch (error) {
         result.error = error;

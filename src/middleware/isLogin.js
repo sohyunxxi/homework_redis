@@ -1,44 +1,34 @@
-//필요 없음
-
-const jwt = require('jsonwebtoken');
-const session = require('express-session');
-
-
-const users = {}; // 사용자 정보 및 세션을 저장할 객체
+const jwt = require("jsonwebtoken")
 
 const isLogin = (req, res, next) => {
-  const { username } = req.body;
-  const secretKey = process.env.SECRET_KEY;
+    console.log("실행")
+    const token = req.cookies.token //여기서 문제 - 포스트맨에 있는데 왜 못읽지?
 
-  if (req.session.isLoggedIn) {
-    // 이미 로그인한 경우 - 이 부분 이상
-    res.status(401).json({ message: '이미 로그인 중입니다. 원래 디바이스에서 로그아웃합니다.' });
-  } else {
-    // 세션에 사용자 정보 저장
-    req.session.isLoggedIn = true;
-    req.session.user = { username };
+    try {
+        if (!token) {
+            throw new Error("no token")
+        }
+        const decoded = jwt.verify(token, process.env.SECRET_KEY);
+        req.user = decoded;
+        
+        next()
+    } catch (error) {
+        const result = {
+            "success": false,
+            "message": ""
+        }
 
-    if (users[username]) {
-      // 이미 다른 디바이스에서 로그인한 경우
-      res.message = '중복 로그인 - 처음 로그인한 디바이스에서 로그아웃합니다.';
-      req.session.destroy(() => {
-        // 세션 해제 후 로그인 처리
-        const token = jwt.sign({ username }, secretKey, { expiresIn: '1m' });
-        users[username] = token;
-        req.user = { username, token };
-        next();
-      });
-    } else {
-      // 새로운 로그인인 경우 토큰 발급
-      const token = jwt.sign({ username }, secretKey, { expiresIn: '1m' });
-      users[username] = token;
-
-      // 사용자 정보 및 토큰을 요청 객체에 추가
-      req.user = { username, token };
-
-      next();
+        if (error.message === "no token") {
+            result.message = "토큰이 없음"
+        } else if (error.message === "jwt expired") {
+            result.message = "토큰이 끝남"
+        } else if (error.message === "invalid token") {
+            result.message = "토큰이 조작됨"
+        } else {
+            result.message = "오류 발생"
+        }
+        res.status(401).send(result)
     }
-  }
-};
+}
 
-module.exports = isLogin;
+module.exports = isLogin

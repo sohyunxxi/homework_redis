@@ -2,9 +2,10 @@
 const express=require("express")
 const session = require("express-session")
 const path = require("path")
-const cookieParser = require("cookie-parser")
 const fs = require("fs")
 const https = require("https")
+const cookieParser = require('cookie-parser');
+
 //======Init========
 const app = express()
 const port = 8000
@@ -30,6 +31,8 @@ app.use(session(sessionObj)); //모든 url에 접근시 적용
 //     }
 //     next()
 // })
+app.use(cookieParser());
+
 const pageApi = require("./src/routers/page")
 app.use("/",pageApi)
 
@@ -44,7 +47,9 @@ app.use("/comment",commentApi)
 
 const historyApi = require("./src/routers/history")
 app.use("/history",historyApi)
-app.use(cookieParser());
+
+
+
 //error handler 넣기
 app.use((err, req, res, next) => {
   res.status(err.status || 500).send({
