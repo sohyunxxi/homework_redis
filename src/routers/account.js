@@ -8,9 +8,7 @@ const checkPattern = require("../middleware/checkPattern")
 const { idReq, pwReq, emailReq, nameReq, genderReq, birthReq, addressReq, telReq }= require("../config/patterns")
 
 // 로그인 API
-//세션 생성해서 저장
-
-router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), isLogin, async (req, res, next) => {
+router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), async (req, res, next) => {
     const { id, pw } = req.body;
     const result = {
         success: false,
@@ -35,32 +33,17 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), isLo
             });
         }
 
-        for (const sessionId in req.sessionStore.sessions) {
-            const session = JSON.parse(req.sessionStore.sessions[sessionId]);
-            if (session.user && session.user.id === id) {
-                req.sessionStore.destroy(sessionId, (err) => {
-                    if (err) {
-                        console.error('세션 삭제 오류:', err);
-                    }
-                });
-            }
-        }
-
-        //세션에 넣기
-        //result.data = rows[0];
-        req.session.user = rows[0];
-        console.log(req.session.user);
-
         const user = rows[0];
-
+        console.log(user)
         // 토큰 생성
         const token = jwt.sign(
-            { id: user.id,  
-
+            { 
+                id: user.id,
+                idx : user.idx
             }, 
             process.env.SECRET_KEY,
             {
-                "issuer":req.body.id,
+                "issuer":user.id,
                 "expiresIn":"1m"
             }
         );
@@ -68,9 +51,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), isLo
         result.success = true;
         result.message = '로그인 성공';
         result.data = user;
-        result.data.token = token;
-
-
+        result.data.token = token
 
         const logData = {
             ip: req.ip,
@@ -95,7 +76,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), isLo
 
 // 로그아웃 API
 router.post('/logout', loginCheck, async (req, res, next) => {
-    const id = req.user.id; // 사용자 정보는 loginCheck 미들웨어에서 req.user에 저장되어 있습니다.
+    const id = req.user.id; // 사용자 정보는 loginCheck 미들웨어에서 req.user에 저장
     const result = {
         success: false,
         message: '로그아웃 실패',

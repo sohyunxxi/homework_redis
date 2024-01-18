@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken")
 
 const isLogin =(req, res, next) =>{
 
-    const token = req.headers.token
+    const token = req.cookies.token // 헤더 말고 쿠키 -> 클라이언트로부터 쿠키 값 받음
 
     try{
         if(!token){

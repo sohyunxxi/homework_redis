@@ -2,7 +2,7 @@
 const express=require("express")
 const session = require("express-session")
 const path = require("path")
-
+const cookieParser = require("cookie-parser")
 const fs = require("fs")
 const https = require("https")
 //======Init========
@@ -44,7 +44,7 @@ app.use("/comment",commentApi)
 
 const historyApi = require("./src/routers/history")
 app.use("/history",historyApi)
-
+app.use(cookieParser());
 //error handler 넣기
 app.use((err, req, res, next) => {
   res.status(err.status || 500).send({
