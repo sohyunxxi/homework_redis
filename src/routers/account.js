@@ -280,6 +280,7 @@ router.get("/my", loginCheck, async (req, res, next) => {
     const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
+    console.log(userIdx, userId)
     const result = {
         success: false,
         message: '',
