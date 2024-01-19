@@ -1,7 +1,6 @@
 const router = require("express").Router()
 const jwt = require('jsonwebtoken');
 const loginCheck = require('../middleware/loginCheck');
-const isLogin = require("../middleware/isLogin");
 const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const checkPattern = require("../middleware/checkPattern")
@@ -34,28 +33,35 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         }
 
         const user = rows[0];
+        console.log(user.isadmin)
         console.log(user.id, user.idx)
         // 토큰 생성
         const token = jwt.sign(
             { 
                 id: user.id,
-                idx : user.idx
+                idx: user.idx,
+                isadmin: user.isadmin
             }, 
             process.env.SECRET_KEY,
             {
-                "issuer":user.id,
-                "expiresIn":"10m"
+                issuer: user.id,
+                expiresIn: '10m'
             }
         );
-        console.log(token)
+        
+        // 토큰 생성 후 추가
+        console.log("토큰 정보:", jwt.decode(token));  // 추가된 부분
+        
         result.success = true;
         result.message = '로그인 성공';
         result.data = user;
         result.data.token = token;
-
+        
         // 쿠키에 토큰 설정
         res.cookie("token", token, { httpOnly: true, secure: false });
-        console.log(req.cookies)
+        
+        console.log(req.cookies);
+        
         const logData = {
             ip: req.ip,
             userId: id,
@@ -65,10 +71,10 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             outputData: result,
             time: new Date(),
         };
-
+        
         makeLog(req, res, logData, next);
         res.send(result);
-
+        
     } catch (error) {
         console.error('로그인 오류: ', error);
         result.message = '로그인 오류 발생';
@@ -79,7 +85,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
 
 
 // 로그아웃 API
-router.post('/logout', isLogin, async (req, res, next) => {
+router.post('/logout', loginCheck, async (req, res, next) => {
     console.log(1)
     console.log(req.user)
     const id = req.user.id;
@@ -266,7 +272,7 @@ router.post("/", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'), 
 });
 
 // 회원정보 보기 API
-router.get("/my", isLogin, async (req, res, next) => {
+router.get("/my", loginCheck, async (req, res, next) => {
     const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
@@ -315,7 +321,7 @@ router.get("/my", isLogin, async (req, res, next) => {
 });
 
 // 회원정보 수정 API
-router.put("/my", isLogin,checkPattern(pwReq, 'pw'), checkPattern(genderReq,'gender'), checkPattern(birthReq, 'birth'),checkPattern(telReq,'tel'), checkPattern(addressReq, 'address'), async (req, res, next) => {
+router.put("/my", loginCheck, checkPattern(pwReq, 'pw'), checkPattern(genderReq,'gender'), checkPattern(birthReq, 'birth'),checkPattern(telReq,'tel'), checkPattern(addressReq, 'address'), async (req, res, next) => {
     const { pw, tel, birth, gender, address } = req.body;
     const userIdx = req.user.idx; 
     const userId = req.user.id; 
@@ -361,7 +367,7 @@ router.put("/my", isLogin,checkPattern(pwReq, 'pw'), checkPattern(genderReq,'gen
 });
 
 // 회원정보 삭제 API
-router.delete("/my", isLogin, async (req, res, next) => {
+router.delete("/my", loginCheck, async (req, res, next) => {
     const userIdx = req.user.idx; // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
