@@ -1,12 +1,12 @@
 const router = require("express").Router();
-const loginCheck = require('../middleware/loginCheck');
+const isLogin = require('../middleware/isLogin');
 const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const isBlank = require("../middleware/isBlank")
 
 
 // 게시물 목록 불러오기 API
-router.get("/", loginCheck, async (req, res, next) => {
+router.get("/", isLogin, async (req, res, next) => {
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
     const result = {
@@ -50,7 +50,7 @@ router.get("/", loginCheck, async (req, res, next) => {
 
 
 // 게시물 불러오기 API
-router.get("/:postIdx", loginCheck, async (req, res, next) => {
+router.get("/:postIdx", isLogin, async (req, res, next) => {
     const postIdx = req.params.postIdx;
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
@@ -99,7 +99,7 @@ router.get("/:postIdx", loginCheck, async (req, res, next) => {
 });
 
 // 게시물 쓰기 API
-router.post("/", loginCheck, isBlank('content', 'title'), async (req, res, next) => {
+router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) => {
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;    // req.user를 통해 사용자 정보에 접근
 
@@ -148,7 +148,7 @@ router.post("/", loginCheck, isBlank('content', 'title'), async (req, res, next)
 });
 
 // 게시물 수정하기 API
-router.put("/:postIdx", loginCheck, isBlank('content', 'title'), async (req, res, next) => {
+router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, next) => {
     const postIdx = req.params.postIdx;
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
 
@@ -183,7 +183,7 @@ router.put("/:postIdx", loginCheck, isBlank('content', 'title'), async (req, res
 });
 
 // 게시물 삭제하기 API
-router.delete("/:idx", loginCheck, async (req, res, next) => {
+router.delete("/:idx", isLogin, async (req, res, next) => {
     const postIdx = req.params.idx;
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;    // req.user를 통해 사용자 정보에 접근

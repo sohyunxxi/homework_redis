@@ -49,14 +49,21 @@ const historyApi = require("./src/routers/history")
 app.use("/history",historyApi)
 
 
+app.use(async (err, req, res, next) => {
+    const logData = {
+        timestamp: new Date(),
+        message: err.message || '서버 오류',
+        status: err.status || 500,
+        // 기타 원하는 로그 데이터 추가
+    };
 
-//error handler 넣기
-app.use((err, req, res, next) => {
-  res.status(err.status || 500).send({
-      success: false,
-      message: err.message || '서버 오류',
-      data: null,
-  });
+    await makeLog(req, res, logData, next);
+    
+    res.status(err.status || 500).send({
+        success: false,
+        message: err.message || '서버 오류',
+        data: null,
+    });
 });
 
 //======Web Server======

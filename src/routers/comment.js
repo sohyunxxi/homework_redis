@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const loginCheck = require('../middleware/loginCheck');
+const isLogin = require('../middleware/isLogin');
 const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const isBlank = require("../middleware/isBlank")
@@ -7,7 +7,7 @@ const isBlank = require("../middleware/isBlank")
 // 댓글 불러오기 API
 
 // 댓글 가져오기 API
-router.get("/", loginCheck, async (req, res, next) => {
+router.get("/", isLogin, async (req, res, next) => {
     const { postIdx } = req.body;
     const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
 
@@ -64,7 +64,7 @@ router.get("/", loginCheck, async (req, res, next) => {
 });
 
 // 댓글 등록 API
-router.post("/", loginCheck, isBlank('content'), async (req, res, next) => {
+router.post("/", isLogin, isBlank('content'), async (req, res, next) => {
     const { postIdx, content } = req.body;
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;   // req.user를 통해 사용자 정보에 접근
@@ -120,7 +120,7 @@ router.post("/", loginCheck, isBlank('content'), async (req, res, next) => {
 });
 
 // 댓글 수정 API
-router.put("/:idx", loginCheck, isBlank('content'), async (req, res, next) => {
+router.put("/:idx", isLogin, isBlank('content'), async (req, res, next) => {
     const { content } = req.body;
     const commentIdx = req.params.idx;
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
@@ -173,7 +173,7 @@ router.put("/:idx", loginCheck, isBlank('content'), async (req, res, next) => {
 
 
 // 댓글 삭제 API
-router.delete("/:idx", loginCheck, async (req, res, next) => {
+router.delete("/:idx", isLogin, async (req, res, next) => {
     const commentIdx = req.params.idx;
     const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
     const userId = req.user.id;   // req.user를 통해 사용자 정보에 접근
