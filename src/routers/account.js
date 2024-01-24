@@ -14,9 +14,9 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         success: false,
         message: '로그인 실패',
         data: {
-            token : "",
+            token: "",
             user: null,
-            dailyLogin : null,
+            dailyLogin: null,
             totalLogin: null
         }
     };
@@ -37,62 +37,58 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         }
 
         const user = rows[0];
-        console.log(user.isadmin)
-        console.log(user.id, user.idx)
 
+        // Redis에 일일 접속자 추가
         await redis.connect();
-        await redis.SADD('dailyLogin', user.id, (err, reply) => {
-            if (err) {
-                console.error('레디스에 로그인 정보 추가 중 에러:', err);
-            } else {
-                console.log('레디스에 로그인 정보 추가 완료:', reply);
-            }
-        });
-        const dailyLogin = await redis.SCARD("dailyLogin")
+        await redis.SADD('dailyLogin', user.id);
+        console.log('레디스에 로그인 정보 추가 완료');
+
+        // Redis에서 일일 접속자 수 조회
+        const dailyLogin = await redis.SCARD("dailyLogin");
+        console.log("일일 접속자 수: ", dailyLogin);
+
+        // 데이터베이스에서 누적 접속자 수 조회 및 업데이트
         const loginQuery = {
             text: 'SELECT total FROM login',
         };
-        let loginResult = (await queryConnect(loginQuery)).rowCount;
-        console.log("로그인 쿼리 결과 : ",loginResult)
-        result.data.dailyLogin = dailyLogin
+        let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
+        loginResult += dailyLogin;
 
-        loginResult+=dailyLogin
         const updateQuery = {
             text: 'UPDATE login SET total = $1',
-            values:[loginResult]
-        }
-        const updateResult = await queryConnect(updateQuery).rows;
-        console.log("업데이트: ", updateResult)
-        result.data.totalLogin = loginResult
-        console.log(loginResult)
+            values: [loginResult],
+        };
 
-        // 토큰 생성
+        const updateResult = (await queryConnect(updateQuery)).rowCount;
+        console.log("누적 접속자 수: ", loginResult);
+        console.log("업데이트: ", updateResult);
+
+        result.data.dailyLogin = dailyLogin;
+        result.data.totalLogin = loginResult;
+
+        // 토큰 생성 및 결과에 추가
         const token = jwt.sign(
-            { 
+            {
                 id: user.id,
                 idx: user.idx,
                 isadmin: user.isadmin
-            }, 
+            },
             process.env.SECRET_KEY,
             {
                 issuer: user.id,
                 expiresIn: '10m'
             }
         );
-        
-        // 토큰 생성 후 추가
-        console.log("토큰 정보:", jwt.decode(token));  // 추가된 부분
-        
+
         result.success = true;
         result.message = '로그인 성공';
         result.data.user = user;
         result.data.token = token;
-        
+
         // 쿠키에 토큰 설정
         res.cookie("token", token, { httpOnly: true, secure: false });
-        
-        console.log(req.cookies);
-        
+
+        // 로그 기록
         const logData = {
             ip: req.ip,
             userId: id,
@@ -102,19 +98,20 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             outputData: result,
             time: new Date(),
         };
-        
+
         makeLog(req, res, logData, next);
         res.send(result);
-        
+
     } catch (error) {
         console.error('로그인 오류: ', error);
         result.message = '로그인 오류 발생';
         result.error = error;
         next(error);
-    } finally{
-        await redis.disconnect()
+    } finally {
+        await redis.disconnect();
     }
 });
+
 
 
 // 로그아웃 API

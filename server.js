@@ -1,11 +1,13 @@
 //==========package============
-const express=require("express")
-const path = require("path")
-const fs = require("fs")
-const https = require("https")
-const cookieParser = require('cookie-parser')
-const makeLog = require('./src/modules/makelog')
-const redis = require("redis").createClient()
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const https = require("https");
+const cookieParser = require('cookie-parser');
+const makeLog = require('./src/modules/makelog');
+const redis = require("redis").createClient();
+const schedule = require('node-schedule');
+const queryConnect = require('./src/modules/queryConnect');
 //======Init========
 const app = express()
 const port = 8000
@@ -15,6 +17,8 @@ const options={
   "cert": fs.readFileSync(path.join(__dirname, "./src/keys/cert.pem")),
   "passphrase":"1234"
 }
+const currentTime = new Date();
+console.log('현재 시간:', currentTime);
 
 app.use(express.json()) 
 app.use(cookieParser());
@@ -53,35 +57,32 @@ app.use(async (err, req, res, next) => {
 
 //정해진 시간에 접속자 업데이트 -> Agenda or node-schedule or node-cron
 //셋의 차이점 : Agenda : 몽고디비 사용
-cron.schedule('0 0 * * *', async () => {
+
+const job = schedule.scheduleJob('0 0 * * *', async () => {
     try {
         await redis.connect();
         const count = await redis.SCARD(`dailyLogin`);
 
         const query = {
-            text: 'INSERT INTO login VALUES ($1)',
-            values:[count]
+            text: 'INSERT INTO login(total) VALUES ($1)',
+            values: [count],
         };
 
-        await queryConnect(query)
+        await queryConnect(query);
         await redis.DEL(`dailyLogin`);
- 
-       console.log(`접속자 삽입 완료: ${count}`);
-    } catch (error) {
-       console.error('에러 발생:', error);
-    } finally {
-       redis.disconnect();
-    }
- });
 
+        console.log(`접속자 삽입 완료: ${count}`);
+    } catch (error) {
+        console.error('에러 발생:', error);
+    } finally {
+        redis.disconnect();
+    }
+});
 
 //======Web Server======
-app.listen(port, ()=>{
-    console.log(`${port}번에서 HTTP 웹서버 실행`)
-})
-https.createServer(options, app).listen(httpsPort, ()=>{ //https 서버
-  console.log(`${port}번에서 HTTP 웹서버 실행`)
-})
-
-
-  
+app.listen(port, () => {
+    console.log(`${port}번에서 HTTP 웹서버 실행`);
+});
+https.createServer(options, app).listen(httpsPort, () => { //https 서버
+    console.log(`${httpsPort}번에서 HTTPS 웹서버 실행`); // 포트 수정
+});
