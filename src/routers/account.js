@@ -3,8 +3,9 @@ const jwt = require('jsonwebtoken');
 const isLogin = require('../middleware/isLogin');
 const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
-const checkPattern = require("../middleware/checkPattern")
-const { idReq, pwReq, emailReq, nameReq, genderReq, birthReq, addressReq, telReq }= require("../config/patterns")
+const checkPattern = require("../middleware/checkPattern");
+const redis = require("redis").createClient();
+const { idReq, pwReq, emailReq, nameReq, genderReq, birthReq, addressReq, telReq }= require("../config/patterns");
 
 // 로그인 API
 router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), async (req, res, next) => {
@@ -13,7 +14,10 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         success: false,
         message: '로그인 실패',
         data: {
-            token : ""
+            token : "",
+            user: null,
+            dailyLogin : null,
+            totalLogin: null
         }
     };
 
@@ -35,6 +39,33 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         const user = rows[0];
         console.log(user.isadmin)
         console.log(user.id, user.idx)
+
+        await redis.connect();
+        await redis.SADD('dailyLogin', user.id, (err, reply) => {
+            if (err) {
+                console.error('레디스에 로그인 정보 추가 중 에러:', err);
+            } else {
+                console.log('레디스에 로그인 정보 추가 완료:', reply);
+            }
+        });
+        const dailyLogin = await redis.SCARD("dailyLogin")
+        const loginQuery = {
+            text: 'SELECT total FROM login',
+        };
+        let loginResult = (await queryConnect(loginQuery)).rowCount;
+        //const totalLogin = loginResult.rows[0].total;
+        console.log("로그인 쿼리 결과 : ",loginResult)
+        result.data.dailyLogin = dailyLogin
+
+        loginResult+=dailyLogin
+        const updateQuery = {
+            text: 'UPDATE login SET total = $1',
+            values:[loginResult]
+        }
+        const updateResult = await queryConnect(updateQuery).rows;
+        result.data.totalLogin = loginResult
+        console.log(loginResult)
+
         // 토큰 생성
         const token = jwt.sign(
             { 
@@ -54,7 +85,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         
         result.success = true;
         result.message = '로그인 성공';
-        result.data = user;
+        result.data.user = user;
         result.data.token = token;
         
         // 쿠키에 토큰 설정
@@ -80,14 +111,14 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         result.message = '로그인 오류 발생';
         result.error = error;
         next(error);
+    } finally{
+        await redis.disconnect()
     }
 });
 
 
 // 로그아웃 API
 router.post('/logout', isLogin, async (req, res, next) => {
-    console.log(1)
-    console.log(req.user)
     const id = req.user.id;
     const result = {
         success: false,

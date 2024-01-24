@@ -1,36 +1,22 @@
 //==========package============
 const express=require("express")
-const session = require("express-session")
 const path = require("path")
 const fs = require("fs")
 const https = require("https")
-const cookieParser = require('cookie-parser');
-
+const cookieParser = require('cookie-parser')
+const makeLog = require('./src/modules/makelog')
+const redis = require("redis").createClient()
 //======Init========
 const app = express()
 const port = 8000
 const httpsPort = 8443
-// const connection = require('./src/config/mysql');
-const sessionObj = require('./src/config/session');
-
 const options={
-  "key": fs.readFileSync(path.join(__dirname, "./src/keys/key.pem")), //가져온 파일의 절대경로
+  "key": fs.readFileSync(path.join(__dirname, "./src/keys/key.pem")),
   "cert": fs.readFileSync(path.join(__dirname, "./src/keys/cert.pem")),
   "passphrase":"1234"
 }
 
-app.use(express.json()) //json 가지고 통신할 수 있게 해주는 설정. -> 받아온 값을 다시 json으로 바꾸는 등등..
-app.use(session(sessionObj)); //모든 url에 접근시 적용
-//======Apis========
-
-// app.get("*",(req,res,next)=>{
-//     const protocol = req.protocol
-//     if(protocol=="http"){
-//         const dest=`https://${req.hostname}:8443${req.url}`
-//         res.redirect(dest)
-//     }
-//     next()
-// })
+app.use(express.json()) 
 app.use(cookieParser());
 
 const pageApi = require("./src/routers/page")
@@ -54,7 +40,6 @@ app.use(async (err, req, res, next) => {
         timestamp: new Date(),
         message: err.message || '서버 오류',
         status: err.status || 500,
-        // 기타 원하는 로그 데이터 추가
     };
 
     await makeLog(req, res, logData, next);
@@ -66,6 +51,10 @@ app.use(async (err, req, res, next) => {
     });
 });
 
+//정해진 시간에 접속자 업데이트 -> Agenda or node-schedule or node-cron
+//셋의 차이점 : Agenda : 몽고디비 사용
+
+
 //======Web Server======
 app.listen(port, ()=>{
     console.log(`${port}번에서 HTTP 웹서버 실행`)
@@ -73,12 +62,6 @@ app.listen(port, ()=>{
 https.createServer(options, app).listen(httpsPort, ()=>{ //https 서버
   console.log(`${port}번에서 HTTP 웹서버 실행`)
 })
-// connection.connect((err) => { //바꾸기
-//     if (err) {
-//       console.error('MySQL 연결 실패: ' + err.stack);
-//       return;
-//     }
-//     console.log('MySQL에 연결되었습니다. 연결 ID: ' + connection.threadId);
-//   });
+
 
   
