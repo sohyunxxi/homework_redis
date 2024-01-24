@@ -53,7 +53,6 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             text: 'SELECT total FROM login',
         };
         let loginResult = (await queryConnect(loginQuery)).rowCount;
-        //const totalLogin = loginResult.rows[0].total;
         console.log("로그인 쿼리 결과 : ",loginResult)
         result.data.dailyLogin = dailyLogin
 
@@ -63,6 +62,7 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             values:[loginResult]
         }
         const updateResult = await queryConnect(updateQuery).rows;
+        console.log("업데이트: ", updateResult)
         result.data.totalLogin = loginResult
         console.log(loginResult)
 
