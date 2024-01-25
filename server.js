@@ -61,7 +61,8 @@ app.use(async (err, req, res, next) => {
 const job = schedule.scheduleJob('0 0 * * *', async () => {
     try {
         await redis.connect();
-        const count = await redis.SCARD(`dailyLogin`);
+        console.log("실행중")
+        const count = await redis.SCARD("dailyLogin");
 
         const query = {
             text: 'INSERT INTO login(total) VALUES ($1)',
@@ -69,7 +70,7 @@ const job = schedule.scheduleJob('0 0 * * *', async () => {
         };
 
         await queryConnect(query);
-        await redis.DEL(`dailyLogin`);
+        await redis.DEL("dailyLogin");
 
         console.log(`접속자 삽입 완료: ${count}`);
     } catch (error) {
