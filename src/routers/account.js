@@ -68,19 +68,28 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
 
         // 데이터베이스에서 누적 접속자 수 조회 및 업데이트
         const loginQuery = {
-            text: 'SELECT total FROM login',
+            text: `SELECT 
+                        total 
+                    FROM 
+                        login
+                    `,
         };
         let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
         loginResult += dailyLogin;
 
-        const updateQuery = {
-            text: 'UPDATE login SET total = $1',
-            values: [loginResult],
-        };
+        // const updateQuery = {
+        //     text: `
+        //             UPDATE 
+        //                 login 
+        //             SET 
+        //                 total = $1
+        //             `,
+        //     values: [loginResult],
+        // };
 
-        const updateResult = (await queryConnect(updateQuery)).rowCount;
-        console.log("누적 접속자 수: ", loginResult);
-        console.log("업데이트: ", updateResult);
+        // const updateResult = (await queryConnect(updateQuery)).rowCount;
+        // console.log("누적 접속자 수: ", loginResult);
+        // console.log("업데이트: ", updateResult);
 
         result.data.dailyLogin = dailyLogin;
         result.data.totalLogin = loginResult;
@@ -178,7 +187,16 @@ router.get("/findid", checkPattern(nameReq,'name'), checkPattern( emailReq,'emai
 
     try {
         const query = {
-            text: 'SELECT id FROM account WHERE name = $1 AND email = $2',
+            text: `
+                SELECT 
+                    id 
+                FROM 
+                    account 
+                WHERE 
+                    name = $1 
+                    AND 
+                    email = $2;
+                    `,
             values: [name, email],
         };
 
@@ -226,7 +244,18 @@ router.get("/findpw",  checkPattern(nameReq,'name'), checkPattern( emailReq,'ema
 
     try{
         const query = {
-            text: 'SELECT pw FROM account WHERE name = $1 AND email = $2 AND id = $3',
+            text: `
+                SELECT 
+                    pw 
+                FROM 
+                    account 
+                WHERE 
+                    name = $1 
+                    AND 
+                    email = $2 
+                    AND 
+                    id = $3
+                `,
             values: [name, email, id],
         };
 
@@ -273,7 +302,16 @@ router.post("/", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'), 
 
     try {
         const selectQuery = {
-            text: 'SELECT * FROM account WHERE id = $1 OR email = $2',
+            text: `
+                    SELECT 
+                        * 
+                    FROM 
+                        account 
+                    WHERE 
+                        id = $1 
+                        OR 
+                        email = $2
+                    `,
             values: [id, email],
         };
         const { rows } = await queryConnect(selectQuery);
@@ -285,7 +323,20 @@ router.post("/", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'), 
             });   
         } else {
             const insertQuery = {
-                text: 'INSERT INTO account (name, id, pw, email, birth, tel, address, gender) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+                text: `
+                        INSERT INTO account (
+                            name,
+                            id,
+                            pw,
+                            email,
+                            birth,
+                            tel,
+                            address,
+                            gender
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8
+                        );
+                    `,
                 values: [name, id, pw, email, birth, tel, address, gender],
             };
             const { rowCount } = await queryConnect(insertQuery);
@@ -335,7 +386,21 @@ router.get("/my", isLogin, async (req, res, next) => {
 
     try {
         const query = {
-            text: 'SELECT id, pw, email, name, address, birth, tel, gender FROM account WHERE idx =$1',
+            text: `
+                SELECT 
+                    id, 
+                    pw, 
+                    email, 
+                    name, 
+                    address, 
+                    birth, 
+                    tel, 
+                    gender 
+                FROM 
+                    account 
+                WHERE 
+                    idx =$1
+                    `,
             values: [userIdx],
         };
 
@@ -384,7 +449,18 @@ router.put("/my", isLogin, checkPattern(pwReq, 'pw'), checkPattern(genderReq,'ge
 
     try {
         const query = {
-            text: 'UPDATE account SET pw = $1, tel = $2, gender = $3, address = $4, birth = $5 WHERE idx = $6',
+            text: `
+                    UPDATE 
+                        account
+                    SET 
+                        pw = $1,
+                        tel = $2,
+                        gender = $3,
+                        address = $4,
+                        birth = $5
+                    WHERE 
+                        idx = $6;
+                    `,
             values: [pw, tel, gender, address, birth, userIdx],
         };
 
@@ -429,7 +505,7 @@ router.delete("/my", isLogin, async (req, res, next) => {
 
     try {
         const query = {
-            text: 'DELETE FROM account WHERE idx = $1',
+            text: `DELETE FROM account WHERE idx = $1`,
             values: [userIdx],
         };
 

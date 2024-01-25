@@ -66,7 +66,7 @@ const job = schedule.scheduleJob('0 0 * * *', async () => { //자정에 업데�
         console.log("실행중");
 
         // Redis에서 일일 접속자 수 조회
-        const count = await redis.SCARD("dailyLogin");
+        const dailyLogin = await redis.SCARD("dailyLogin");
 
         // 데이터베이스에서 누적 접속자 수 조회
         const loginQuery = {
@@ -75,7 +75,7 @@ const job = schedule.scheduleJob('0 0 * * *', async () => { //자정에 업데�
         let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
 
         // 누적 접속자 수에 일일 접속자 수를 더함
-        loginResult += count;
+        loginResult += dailyLogin;
 
         // 누적 접속자 수를 업데이트하는 쿼리
         const updateQuery = {
@@ -89,7 +89,7 @@ const job = schedule.scheduleJob('0 0 * * *', async () => { //자정에 업데�
         // Redis의 dailyLogin 집합 삭제
         await redis.DEL("dailyLogin");
 
-        console.log(`접속자 업데이트 완료: ${count}`);
+        console.log(`접속자 업데이트 완료: ${dailyLogin}`);
     } catch (error) {
         console.error('에러 발생:', error);
     } finally {
