@@ -3,7 +3,7 @@ const isLogin = require('../middleware/isLogin');
 const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const isBlank = require("../middleware/isBlank")
-
+const redis = require("redis").createClient();
 
 // 게시물 목록 불러오기 API
 router.get("/", isLogin, async (req, res, next) => {
@@ -19,11 +19,19 @@ router.get("/", isLogin, async (req, res, next) => {
 
     try {
         const query = {
-            text: `SELECT post.*, account.id AS account_id
-                    FROM post
-                    INNER JOIN account ON post.account_idx = account.idx
-                    ORDER BY post.created_at DESC`,
+            text: `
+                SELECT 
+                    post.*, 
+                    account.id AS account_id
+                FROM 
+                    post
+                INNER JOIN 
+                    account ON post.account_idx = account.idx
+                ORDER BY 
+                    post.created_at DESC
+            `,
         };
+        
         const { rows } = await queryConnect(query);
         result.data.posts = rows
 
@@ -48,6 +56,100 @@ router.get("/", isLogin, async (req, res, next) => {
     }
 });
 
+// 게시물 검색하기
+router.get("/search", isLogin, async (req, res, next) => {
+    const userKey = req.user.idx
+    const { title } = req.query
+    const time = new Date()
+    const result = {
+        "message": "",
+        "data": {
+            "searchPost": null,
+            "recent": null
+        }
+    }
+    try {
+        await redis.connect()
+        redis.ZADD(`recent${userKey}`, {
+            score: time.getTime(),
+            value: title
+        })
+        await redis.EXPIRE(`recent${userKey}`, 86400)
+
+        const recentSearch = await redis.ZRANGE(`recent${userKey}`, 0, -1)
+        const reversed = recentSearch.reverse().slice(0, 5)
+
+        const query = {
+            text: `
+                SELECT 
+                    post.title, 
+                    post.content, 
+                    post.created_at, 
+                    account.id AS postingUser
+                FROM 
+                    post
+                JOIN 
+                    account ON post.account_idx = account.idx
+                WHERE 
+                    post.title ILIKE $1
+                ORDER BY 
+                    post.created_at DESC
+            `,
+            values: [`%${title}%`],
+        };
+        const {rowCount, rows}= await queryConnect(query);
+        console.log("결과: ",rowCount)
+        console.log("rows: ",rows)
+        if (rowCount == 0) {
+            result.message = "게시물 없음."
+        } else {
+            result.data.searchPost = rowCount
+            result.message = "게시물 있음"
+        }
+
+        result.data.recentResult = reversed
+
+        return res.status(200).send(result)
+    } catch (error) {
+        next(error)
+    } finally {
+        await redis.disconnect()
+    }
+})
+
+// 최근 검색어 5개 출력 API
+router.get("/recent", isLogin, async (req, res, next) => {
+    const userKey = req.user.idx;
+    const result = initializeResult();
+
+    try {
+        await redis.connect();
+
+        const recentSearch = await redis.ZRANGE(`recent${userKey}`, -5, -1);
+        console.log("검색기록: ", recentSearch);
+
+        if (recentSearch.length === 0) {
+            result.message = "최근 검색기록 없음.";
+            return res.status(200).send(result);
+        }
+
+        result.data = recentSearch.reverse();
+        await redis.EXPIRE(`recent${userKey}`, 86400); // 24시간
+        res.status(200).send(result);
+    } catch (error) {
+        next(error);
+    } finally {
+        await redis.disconnect();
+    }
+});
+
+function initializeResult() {
+    return {
+        message: "",
+        data: null,
+    };
+}
+
 
 // 게시물 불러오기 API
 router.get("/:postIdx", isLogin, async (req, res, next) => {
@@ -61,10 +163,15 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
     };
     try {
         const query = {
-            text: `SELECT post.*, account.id AS account_id
-                    FROM post
-                    JOIN account ON post.account_idx = account.idx
-                    WHERE post.idx = $1;`,
+            text: ` SELECT 
+                        post.*, 
+                        account.id AS account_id
+                    FROM 
+                        post
+                    JOIN 
+                        account ON post.account_idx = account.idx
+                    WHERE 
+                        post.idx = $1;`,
             values: [postIdx],
         };
         const { rows } = await queryConnect(query);
@@ -112,9 +219,15 @@ router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) =>
     };
     try {
         const query = {
-            text: 'INSERT INTO post (title, content, account_idx) VALUES ($1, $2, $3)',
+            text: `
+                INSERT INTO 
+                    post (title, content, account_idx) 
+                VALUES 
+                    ($1, $2, $3)
+            `,
             values: [title, content, userIdx],
         };
+        
 
         const { rowCount } = await queryConnect(query);
 
@@ -161,9 +274,19 @@ router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, n
     };
     try {
         const query = {
-            text: 'UPDATE post SET title = $1, content = $2 WHERE idx = $3 AND account_idx = $4',
+            text: `
+                UPDATE 
+                    post 
+                SET 
+                    title = $1, 
+                    content = $2 
+                WHERE 
+                    idx = $3 
+                    AND account_idx = $4
+            `,
             values: [title, content, postIdx, userIdx],
         };
+        
 
         const { rowCount } = await queryConnect(query);
 
@@ -195,7 +318,10 @@ router.delete("/:idx", isLogin, async (req, res, next) => {
     };
     try {
         const query = {
-            text: 'DELETE FROM post WHERE idx = $1 AND account_idx = $2',
+            text: `DELETE FROM 
+                        post 
+                    WHERE 
+                        idx = $1 AND account_idx = $2`,
             values: [postIdx, userIdx],
         };
 
@@ -229,4 +355,5 @@ router.delete("/:idx", isLogin, async (req, res, next) => {
     }
 });
 
+  
 module.exports = router

@@ -35,12 +35,31 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
                 status: 401
             });
         }
-
-        const user = rows[0];
-
-        // Redis에 일일 접속자 추가
+      
         await redis.connect();
-        await redis.SADD('dailyLogin', user.id);
+        
+        const storedUser = await redis.get(`user:${id}`);
+        if (storedUser) {
+            const storedTimestamp = storedUser.split('_')[1];
+            if (storedTimestamp) {
+                const currentTime = Date.now();
+                const sessionAge = currentTime - parseInt(storedTimestamp);
+
+                const sessionThreshold = 0.1 * 60 * 1000;
+
+                if (sessionAge < sessionThreshold) {
+                    return next({
+                        message: "중복 로그인 감지",
+                        status: 401
+                    });
+                }
+            }
+        }
+
+        // 로그인 성공한 사용자의 ID를 Redis에 저장
+        await redis.set(`user:${id}`, `loggedIn_${Date.now()}`);
+        // Redis에 일일 접속자 추가
+        await redis.SADD('dailyLogin', rows[0].id);
         console.log('레디스에 로그인 정보 추가 완료');
 
         // Redis에서 일일 접속자 수 조회
@@ -69,20 +88,20 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         // 토큰 생성 및 결과에 추가
         const token = jwt.sign(
             {
-                id: user.id,
-                idx: user.idx,
-                isadmin: user.isadmin
+                id: rows[0].id,
+                idx: rows[0].idx,
+                isadmin: rows[0].isadmin
             },
             process.env.SECRET_KEY,
             {
-                issuer: user.id,
+                issuer: rows[0].id,
                 expiresIn: '10m'
             }
         );
 
         result.success = true;
         result.message = '로그인 성공';
-        result.data.user = user;
+        result.data.user = rows[0];
         result.data.token = token;
 
         // 쿠키에 토큰 설정
@@ -112,20 +131,21 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
     }
 });
 
-
-
 // 로그아웃 API
 router.post('/logout', isLogin, async (req, res, next) => {
-    const id = req.user.id;
+    const userId = req.user.id;
     const result = {
         success: false,
         message: '로그아웃 실패',
         data: null
     };
+    // Redis에서 사용자 ID 제거
+    await redis.connect();
+    await redis.del(`user:${userId}`);
 
     const logData = {
         ip: req.ip,
-        userId: id,
+        userId: userId,
         apiName: '/account/logout',
         restMethod: 'POST',
         inputData: {},
@@ -142,6 +162,8 @@ router.post('/logout', isLogin, async (req, res, next) => {
         res.status(200).json(result);
     } catch (error) {
         next(error);
+    } finally {
+        await redis.disconnect();
     }
 });
 

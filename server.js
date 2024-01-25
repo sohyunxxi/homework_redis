@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const session = require("express-session")
 const cookieParser = require('cookie-parser');
 const makeLog = require('./src/modules/makelog');
 const redis = require("redis").createClient();
@@ -10,6 +11,7 @@ const schedule = require('node-schedule');
 const queryConnect = require('./src/modules/queryConnect');
 //======Init========
 const app = express()
+const sessionObj = require('./src/config/session');
 const port = 8000
 const httpsPort = 8443
 const options={
@@ -19,7 +21,7 @@ const options={
 }
 const currentTime = new Date();
 console.log('현재 시간:', currentTime);
-
+app.use(session(sessionObj));
 app.use(express.json()) 
 app.use(cookieParser());
 
@@ -58,27 +60,43 @@ app.use(async (err, req, res, next) => {
 //정해진 시간에 접속자 업데이트 -> Agenda or node-schedule or node-cron
 //셋의 차이점 : Agenda : 몽고디비 사용
 
-const job = schedule.scheduleJob('0 0 * * *', async () => {
+const job = schedule.scheduleJob('0 0 * * *', async () => { //자정에 업데이트
     try {
         await redis.connect();
-        console.log("실행중")
+        console.log("실행중");
+
+        // Redis에서 일일 접속자 수 조회
         const count = await redis.SCARD("dailyLogin");
 
-        const query = {
-            text: 'INSERT INTO login(total) VALUES ($1)',
-            values: [count],
+        // 데이터베이스에서 누적 접속자 수 조회
+        const loginQuery = {
+            text: 'SELECT total FROM login',
+        };
+        let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
+
+        // 누적 접속자 수에 일일 접속자 수를 더함
+        loginResult += count;
+
+        // 누적 접속자 수를 업데이트하는 쿼리
+        const updateQuery = {
+            text: 'UPDATE login SET total = $1',
+            values: [loginResult],
         };
 
-        await queryConnect(query);
+        // 쿼리 실행
+        await queryConnect(updateQuery);
+
+        // Redis의 dailyLogin 집합 삭제
         await redis.DEL("dailyLogin");
 
-        console.log(`접속자 삽입 완료: ${count}`);
+        console.log(`접속자 업데이트 완료: ${count}`);
     } catch (error) {
         console.error('에러 발생:', error);
     } finally {
         redis.disconnect();
     }
 });
+
 
 //======Web Server======
 app.listen(port, () => {
