@@ -77,7 +77,7 @@ router.get("/search", isLogin, async (req, res, next) => {
         await redis.EXPIRE(`recent${userKey}`, 86400)
 
         const recentSearch = await redis.ZRANGE(`recent${userKey}`, 0, -1)
-        const reversed = recentSearch.reverse().slice(0, 5)
+        const filpped = recentSearch.reverse().slice(0, 5)
 
         const query = {
             text: `
@@ -106,8 +106,18 @@ router.get("/search", isLogin, async (req, res, next) => {
             result.data.searchPost = rowCount
             result.message = "게시물 있음"
         }
+        const logData = {
+            ip: req.ip,
+            userId: id,
+            apiName: '/post/search',
+            restMethod: 'GET',
+            inputData: { id },
+            outputData: result,
+            time: new Date(),
+        };
 
-        result.data.recentResult = reversed
+        makeLog(req, res, logData, next);
+        result.data.recentResult = filpped
 
         return res.status(200).send(result)
     } catch (error) {
@@ -119,13 +129,13 @@ router.get("/search", isLogin, async (req, res, next) => {
 
 // 최근 검색어 5개 출력 API
 router.get("/recent", isLogin, async (req, res, next) => {
-    const userKey = req.user.idx;
+    const userIdx = req.user.idx;
     const result = initializeResult();
 
     try {
         await redis.connect();
 
-        const recentSearch = await redis.ZRANGE(`recent${userKey}`, -5, -1);
+        const recentSearch = await redis.ZRANGE(`recent${userIdx}`, -5, -1);
         console.log("검색기록: ", recentSearch);
 
         if (recentSearch.length === 0) {
@@ -134,7 +144,19 @@ router.get("/recent", isLogin, async (req, res, next) => {
         }
 
         result.data = recentSearch.reverse();
-        await redis.EXPIRE(`recent${userKey}`, 86400); // 24시간
+        await redis.EXPIRE(`recent${userIdx}`, 86400); // 24시간
+        const logData = {
+            ip: req.ip,
+            userId: id,
+            apiName: '/post/recent',
+            restMethod: 'GET',
+            inputData: { id },
+            outputData: result,
+            time: new Date(),
+        };
+
+        makeLog(req, res, logData, next);
+    
         res.status(200).send(result);
     } catch (error) {
         next(error);
