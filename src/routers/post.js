@@ -58,26 +58,25 @@ router.get("/", isLogin, async (req, res, next) => {
 
 // 게시물 검색하기
 router.get("/search", isLogin, async (req, res, next) => {
-    const userKey = req.user.idx
+    const userIdx = req.user.idx
+    const userId = req.user.id
     const { title } = req.query
     const time = new Date()
     const result = {
         "message": "",
         "data": {
             "searchPost": null,
-            "recent": null
         }
     }
     try {
         await redis.connect()
-        redis.ZADD(`recent${userKey}`, {
+        redis.ZADD(`recent${userIdx}`, {
             score: time.getTime(),
             value: title
         })
-        await redis.EXPIRE(`recent${userKey}`, 86400)
+        await redis.EXPIRE(`recent${userIdx}`, 86400)
 
-        const recentSearch = await redis.ZRANGE(`recent${userKey}`, 0, -1)
-        const filpped = recentSearch.reverse().slice(0, 5)
+        const recentSearch = await redis.ZRANGE(`recent${userIdx}`, 0, -1)
 
         const query = {
             text: `
@@ -108,16 +107,15 @@ router.get("/search", isLogin, async (req, res, next) => {
         }
         const logData = {
             ip: req.ip,
-            userId: id,
+            userId: userId,
             apiName: '/post/search',
             restMethod: 'GET',
-            inputData: { id },
+            inputData: { userId },
             outputData: result,
             time: new Date(),
         };
 
         makeLog(req, res, logData, next);
-        result.data.recentResult = filpped
 
         return res.status(200).send(result)
     } catch (error) {
@@ -130,7 +128,13 @@ router.get("/search", isLogin, async (req, res, next) => {
 // 최근 검색어 5개 출력 API
 router.get("/recent", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx;
-    const result = initializeResult();
+    const userId = req.user.id
+
+    const result = {
+        success: false,
+        message: "",
+        data: null,
+    };
 
     try {
         await redis.connect();
@@ -147,10 +151,10 @@ router.get("/recent", isLogin, async (req, res, next) => {
         await redis.EXPIRE(`recent${userIdx}`, 86400); // 24시간
         const logData = {
             ip: req.ip,
-            userId: id,
+            userId: userId,
             apiName: '/post/recent',
             restMethod: 'GET',
-            inputData: { id },
+            inputData: { userId },
             outputData: result,
             time: new Date(),
         };
@@ -164,14 +168,6 @@ router.get("/recent", isLogin, async (req, res, next) => {
         await redis.disconnect();
     }
 });
-
-function initializeResult() {
-    return {
-        message: "",
-        data: null,
-    };
-}
-
 
 // 게시물 불러오기 API
 router.get("/:postIdx", isLogin, async (req, res, next) => {
