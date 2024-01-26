@@ -43,11 +43,11 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             const storedTimestamp = storedUser.split('_')[1];
             if (storedTimestamp) {
                 const currentTime = Date.now();
-                const sessionAge = currentTime - parseInt(storedTimestamp);
+                const timePassed = currentTime - parseInt(storedTimestamp);
 
-                const sessionThreshold = 0.1 * 60 * 1000;
+                const timeOut = 0.1 * 60 * 1000;
 
-                if (sessionAge < sessionThreshold) {
+                if (timePassed < timeOut) {
                     return next({
                         message: "중복 로그인 감지",
                         status: 401
@@ -56,17 +56,13 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
             }
         }
 
-        // 로그인 성공한 사용자의 ID를 Redis에 저장
         await redis.set(`user:${id}`, `loggedIn_${Date.now()}`);
-        // Redis에 일일 접속자 추가
         await redis.SADD('dailyLogin', rows[0].id);
         console.log('레디스에 로그인 정보 추가 완료');
 
-        // Redis에서 일일 접속자 수 조회
         const dailyLogin = await redis.SCARD("dailyLogin");
         console.log("일일 접속자 수: ", dailyLogin);
 
-        // 데이터베이스에서 누적 접속자 수 조회 및 업데이트
         const loginQuery = {
             text: `SELECT 
                         total 
@@ -77,24 +73,9 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
         loginResult += dailyLogin;
 
-        // const updateQuery = {
-        //     text: `
-        //             UPDATE 
-        //                 login 
-        //             SET 
-        //                 total = $1
-        //             `,
-        //     values: [loginResult],
-        // };
-
-        // const updateResult = (await queryConnect(updateQuery)).rowCount;
-        // console.log("누적 접속자 수: ", loginResult);
-        // console.log("업데이트: ", updateResult);
-
         result.data.dailyLogin = dailyLogin;
         result.data.totalLogin = loginResult;
 
-        // 토큰 생성 및 결과에 추가
         const token = jwt.sign(
             {
                 id: rows[0].id,
@@ -113,10 +94,8 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         result.data.user = rows[0];
         result.data.token = token;
 
-        // 쿠키에 토큰 설정
         res.cookie("token", token, { httpOnly: true, secure: false });
 
-        // 로그 기록
         const logData = {
             ip: req.ip,
             userId: id,
