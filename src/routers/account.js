@@ -37,12 +37,21 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         }
       
         await redis.connect();
+
+        const prevUniqueId = await redis.get(`user:${rows[0].id}`);
+
+        // 이전 UUID가 존재하면 중복 로그인
+        if (prevUniqueId) {
+            console.log("중복로그인임.");
+            await redis.DEL(`user:${rows[0].id}`);
+            console.log("기존 uid 삭제.");
+        }
         
         // 새로운 UUID 생성
         const uniqueId = uuid.v4();
         // 로그인 중복 방지를 위해 이전에 저장된 UUID 삭제
         await redis.DEL(`user:${rows[0].id}`);
-        console.log("중복 로그인 - 기존 토큰 삭제 완료")
+        console.log("새로운 uid 생성")
         // 현재 로그인에 대한 UUID 저장
         await redis.set(`user:${rows[0].id}`, uniqueId); // 새로 uid 저장
         await redis.EXPIRE(`user:${rows[0].id}`, 60000); // 10분 유효
