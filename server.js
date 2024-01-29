@@ -60,7 +60,7 @@ app.use(async (err, req, res, next) => {
 //정해진 시간에 접속자 업데이트 -> Agenda or node-schedule or node-cron
 //셋의 차이점 : Agenda : 몽고디비 사용
 
-const job = schedule.scheduleJob('58 4 * * *', async () => { //자정에 업데이트
+const job = schedule.scheduleJob('32 9 * * *', async () => { //자정에 업데이트
     try {
         await redis.connect();
         console.log("실행중");

@@ -29,12 +29,20 @@ router.get("/", isLogin, async (req, res, next) => {
 
         const query = {
             text: `
-                SELECT comment.*, account.id AS account_id
-                FROM comment
-                INNER JOIN account ON comment.account_idx = account.idx
-                WHERE comment.post_idx = $1
-                ORDER BY comment.created_at DESC
-            `,
+                    SELECT 
+                        comment.*, 
+                        account.id AS account_id
+                    FROM 
+                        comment
+                    INNER JOIN 
+                        account 
+                    ON 
+                        comment.account_idx = account.idx
+                    WHERE 
+                        comment.post_idx = $1
+                    ORDER BY 
+                        comment.created_at DESC
+                `,
             values: [postIdx],
         };
 
@@ -84,7 +92,13 @@ router.post("/", isLogin, isBlank('content'), async (req, res, next) => {
         }
 
         const query = {
-            text: 'INSERT INTO comment (content, account_idx, post_idx) VALUES ($1, $2, $3)',
+            text: 
+                `
+                INSERT INTO 
+                    comment (content, account_idx, post_idx) 
+                VALUES 
+                    ($1, $2, $3)
+                `,
             values: [content, userIdx, postIdx],
         };
 
@@ -135,7 +149,16 @@ router.put("/:idx", isLogin, isBlank('content'), async (req, res, next) => {
 
     try {
         const query = {
-            text: 'UPDATE comment SET content = $1 WHERE idx = $2 AND account_idx = $3',
+            text: `
+                    UPDATE 
+                        comment 
+                    SET 
+                        content = $1 
+                    WHERE 
+                        idx = $2 
+                    AND 
+                        account_idx = $3
+                    `,
             values: [content, commentIdx, userIdx],
         };
 
@@ -187,7 +210,14 @@ router.delete("/:idx", isLogin, async (req, res, next) => {
 
     try {
         const query = {
-            text: 'DELETE FROM comment WHERE idx = $1 AND account_idx = $2',
+            text: `
+                DELETE FROM 
+                    comment 
+                WHERE 
+                    idx = $1 
+                AND 
+                    account_idx = $2
+                    `,
             values: [commentIdx, userIdx],
         };
 

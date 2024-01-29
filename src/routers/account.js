@@ -5,9 +5,9 @@ const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const checkPattern = require("../middleware/checkPattern");
 const redis = require("redis").createClient();
+const uuid = require("uuid")
 const { idReq, pwReq, emailReq, nameReq, genderReq, birthReq, addressReq, telReq }= require("../config/patterns");
 
-// 로그인 API
 router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), async (req, res, next) => {
     const { id, pw } = req.body;
     const result = {
@@ -38,49 +38,21 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
       
         await redis.connect();
         
-        const storedUser = await redis.get(`user:${id}`);
-        if (storedUser) {
-            const storedTimestamp = storedUser.split('_')[1];
-            if (storedTimestamp) {
-                const currentTime = Date.now();
-                const timePassed = currentTime - parseInt(storedTimestamp);
-
-                const timeOut = 0.1 * 60 * 1000;
-
-                if (timePassed < timeOut) {
-                    return next({
-                        message: "중복 로그인 감지",
-                        status: 401
-                    });
-                }
-            }
-        }
-
-        await redis.set(`user:${id}`, `loggedIn_${Date.now()}`);
-        await redis.SADD('dailyLogin', rows[0].id);
-        console.log('레디스에 로그인 정보 추가 완료');
-
-        const dailyLogin = await redis.SCARD("dailyLogin");
-        console.log("일일 접속자 수: ", dailyLogin);
-
-        const loginQuery = {
-            text: `SELECT 
-                        total 
-                    FROM 
-                        login
-                    `,
-        };
-        let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
-        loginResult += dailyLogin;
-
-        result.data.dailyLogin = dailyLogin;
-        result.data.totalLogin = loginResult;
+        // 새로운 UUID 생성
+        const uniqueId = uuid.v4();
+        // 로그인 중복 방지를 위해 이전에 저장된 UUID 삭제
+        await redis.DEL(`user:${rows[0].id}`);
+        console.log("중복 로그인 - 기존 토큰 삭제 완료")
+        // 현재 로그인에 대한 UUID 저장
+        await redis.set(`user:${rows[0].id}`, uniqueId); // 새로 uid 저장
+        await redis.EXPIRE(`user:${rows[0].id}`, 60000); // 10분 유효
 
         const token = jwt.sign(
             {
                 id: rows[0].id,
                 idx: rows[0].idx,
-                isadmin: rows[0].isadmin
+                isadmin: rows[0].isadmin,
+                uuid: uniqueId
             },
             process.env.SECRET_KEY,
             {
@@ -118,6 +90,64 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         await redis.disconnect();
     }
 });
+
+
+// 로그인 수 API
+router.get("/countLogin",isLogin, async (req,res,next)=>{
+    const userId = req.user.id;
+    const result = {
+        success: false,
+        message: '',
+        data: {
+            dailyLogin: null,
+            totalLogin: null
+        }
+    };
+    try{
+        await redis.connect();
+        const dailyLogin = await redis.SCARD("dailyLogin");// 데일리로그인에 있는 수를 가져옴
+        console.log("일일 접속자 수: ", dailyLogin);
+    
+        const loginQuery = {//로그인카운트 로그인히스토리 테이블명..
+            text:  `
+                    SELECT 
+                        total 
+                    FROM 
+                        login
+                    `,
+        };
+    
+        let loginResult = parseInt((await queryConnect(loginQuery)).rows[0].total);
+        loginResult += dailyLogin;
+        
+        result.data.dailyLogin = dailyLogin;
+        result.data.totalLogin = loginResult;
+        const logData = {
+            ip: req.ip,
+            userId: userId,
+            apiName: '/account/countLogin',
+            restMethod: 'GET',
+            inputData: { userId },
+            outputData: result,
+            time: new Date(),
+        };
+
+        makeLog(req, res, logData, next);
+        result.success = "true";
+        result.message = "로그인 수 가져오기 성공";
+        res.send(result);
+
+    } catch(error){
+        console.error('로그인 수 가져오기 오류: ', error);
+        result.message = '로그인 수 가져오기 오류 발생';
+        result.error = error;
+        next(error);
+    } finally {
+        await redis.disconnect();
+    }
+
+})
+
 
 // 로그아웃 API
 router.post('/logout', isLogin, async (req, res, next) => {
@@ -303,15 +333,16 @@ router.post("/", checkPattern(nameReq,'name'), checkPattern( emailReq,'email'), 
         } else {
             const insertQuery = {
                 text: `
-                        INSERT INTO account (
-                            name,
-                            id,
-                            pw,
-                            email,
-                            birth,
-                            tel,
-                            address,
-                            gender
+                        INSERT INTO 
+                            account (
+                                name,
+                                id,
+                                pw,
+                                email,
+                                birth,
+                                tel,
+                                address,
+                                gender
                         ) VALUES (
                             $1, $2, $3, $4, $5, $6, $7, $8
                         );
@@ -484,7 +515,12 @@ router.delete("/my", isLogin, async (req, res, next) => {
 
     try {
         const query = {
-            text: `DELETE FROM account WHERE idx = $1`,
+            text:   `
+                    DELETE FROM 
+                        account 
+                    WHERE 
+                        idx = $1
+                    `,
             values: [userIdx],
         };
 

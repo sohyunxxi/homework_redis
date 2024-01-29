@@ -7,7 +7,7 @@ const redis = require("redis").createClient();
 
 // 게시물 목록 불러오기 API
 router.get("/", isLogin, async (req, res, next) => {
-    const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
+    const userId = req.user.id;  
 
     const result = {
         success: false,
@@ -39,7 +39,7 @@ router.get("/", isLogin, async (req, res, next) => {
         result.message = "게시물 불러오기 성공";    
         const logData = {
             ip: req.ip,
-            userId,  // req.user를 통해 사용자 정보에 접근
+            userId,  
             apiName: '/post', 
             restMethod: 'GET', 
             inputData: {}, 
@@ -56,12 +56,12 @@ router.get("/", isLogin, async (req, res, next) => {
     }
 });
 
-// 게시물 검색하기
+// 게시물 검색하기 -> 제목, 내용, 작성자 통틀어 해서 바꿔오기, 따로 search 카테고리 만들어서 /search/word 등등...
 router.get("/search", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx
     const userId = req.user.id
     const { title } = req.query
-    const time = new Date()
+    const time = new Date() //timestamp
     const result = {
         "message": "",
         "data": {
@@ -70,13 +70,12 @@ router.get("/search", isLogin, async (req, res, next) => {
     }
     try {
         await redis.connect()
-        redis.ZADD(`recent${userIdx}`, {
+        redis.ZADD(`recent${userIdx}`, { //Sorted Set에 멤버를 추가하고 해당 멤버에 대한 점수를 설정 - 시간으로 score 설정해서 정렬하기 위함
+
             score: time.getTime(),
             value: title
         })
-        await redis.EXPIRE(`recent${userIdx}`, 86400)
-
-        const recentSearch = await redis.ZRANGE(`recent${userIdx}`, 0, -1)
+        await redis.EXPIRE(`recent${userIdx}`, 86400) //지정된 키의 만료 시간을 설정 만료 시간이 지나면 키는 자동으로 삭제
 
         const query = {
             text: `
@@ -103,7 +102,7 @@ router.get("/search", isLogin, async (req, res, next) => {
             result.message = "게시물 없음."
         } else {
             result.data.searchPost = rowCount
-            result.message = "게시물 있음"
+            result.message = `게시물 있음, ${rowCount}개의 게시물이 검색되었습니다.`
         }
         const logData = {
             ip: req.ip,
@@ -116,8 +115,7 @@ router.get("/search", isLogin, async (req, res, next) => {
         };
 
         makeLog(req, res, logData, next);
-
-        return res.status(200).send(result)
+        return res.status(200).send(result);
     } catch (error) {
         next(error)
     } finally {
@@ -125,7 +123,7 @@ router.get("/search", isLogin, async (req, res, next) => {
     }
 })
 
-// 최근 검색어 5개 출력 API
+// 최근 검색어 5개 출력 API 
 router.get("/recent", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx;
     const userId = req.user.id
@@ -139,7 +137,7 @@ router.get("/recent", isLogin, async (req, res, next) => {
     try {
         await redis.connect();
 
-        const recentSearch = await redis.ZRANGE(`recent${userIdx}`, -5, -1);
+        const recentSearch = await redis.ZRANGE(`recent${userIdx}`, -5, -1);//ZRANGE (Sorted Set에서 범위를 가져오기), 매개변수로 rev 주게 됨
         console.log("검색기록: ", recentSearch);
 
         if (recentSearch.length === 0) {
@@ -147,8 +145,10 @@ router.get("/recent", isLogin, async (req, res, next) => {
             return res.status(200).send(result);
         }
 
+        result.success=true
         result.data = recentSearch.reverse();
         await redis.EXPIRE(`recent${userIdx}`, 86400); // 24시간
+
         const logData = {
             ip: req.ip,
             userId: userId,
@@ -160,7 +160,6 @@ router.get("/recent", isLogin, async (req, res, next) => {
         };
 
         makeLog(req, res, logData, next);
-    
         res.status(200).send(result);
     } catch (error) {
         next(error);
@@ -172,7 +171,7 @@ router.get("/recent", isLogin, async (req, res, next) => {
 // 게시물 불러오기 API
 router.get("/:postIdx", isLogin, async (req, res, next) => {
     const postIdx = req.params.postIdx;
-    const userId = req.user.id;  // req.user를 통해 사용자 정보에 접근
+    const userId = req.user.id;
 
     const result = {
         success: false,
@@ -206,7 +205,7 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
         
         const logData = {
             ip: req.ip,
-            userId,  // req.user를 통해 사용자 정보에 접근
+            userId,  
             apiName: '/post:/postIdx', 
             restMethod: 'GET', 
             inputData: {}, 
@@ -225,8 +224,8 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
 
 // 게시물 쓰기 API
 router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) => {
-    const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
-    const userId = req.user.id;    // req.user를 통해 사용자 정보에 접근
+    const userIdx = req.user.idx; 
+    const userId = req.user.id; 
 
     const { content, title } = req.body;
 
@@ -262,7 +261,7 @@ router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) =>
 
         const logData = {
             ip: req.ip,
-            userId,  // req.user를 통해 사용자 정보에 접근
+            userId,  
             apiName: '/post',
             restMethod: 'POST',
             inputData: { content, title },
@@ -281,7 +280,7 @@ router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) =>
 // 게시물 수정하기 API
 router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, next) => {
     const postIdx = req.params.postIdx;
-    const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
+    const userIdx = req.user.idx; 
 
     const { content, title } = req.body;
 
@@ -326,8 +325,8 @@ router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, n
 // 게시물 삭제하기 API
 router.delete("/:idx", isLogin, async (req, res, next) => {
     const postIdx = req.params.idx;
-    const userIdx = req.user.idx;  // req.user를 통해 사용자 정보에 접근
-    const userId = req.user.id;    // req.user를 통해 사용자 정보에 접근
+    const userIdx = req.user.idx;  
+    const userId = req.user.id;   
 
     const result = {
         "success": false,
