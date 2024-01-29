@@ -5,7 +5,7 @@ const queryConnect = require('./queryConnect');
 const makeLog = require('./makelog');
 
 const setupScheduledJob = () => {
-    const job = schedule.scheduleJob('18 16 * * *', async () => { //자정에 업데이트
+    const job = schedule.scheduleJob('0 0 * * *', async () => { //자정에 업데이트
         try {
             await redis.connect();
             console.log("실행중");
@@ -23,13 +23,13 @@ const setupScheduledJob = () => {
             loginResult += dailyLogin;
     
             // 누적 접속자 수를 업데이트하는 쿼리
-            const updateQuery = {
-                text: 'UPDATE login SET total = $1',
+            const insertQuery = {
+                text: 'INSERT INTO login (total) VALUES ($1)',
                 values: [loginResult],
-            };
+            };            
     
             // 쿼리 실행
-            await queryConnect(updateQuery);
+            await queryConnect(insertQuery);
     
             // Redis의 dailyLogin 집합 삭제
             await redis.DEL("dailyLogin");

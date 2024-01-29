@@ -1,9 +1,10 @@
 const isBlank = (...items) => {
     return (req, res, next) => {
         const blank = [];
-
+        console.log("빈칸 미들웨어")
         items.forEach(item => {
-            if (!req.body[item]) {
+            // req.body 또는 req.file에서 해당 필드가 누락되었는지 체크
+            if (!req.body[item] && !req.file[item]) {
                 blank.push(item);
             }
         });

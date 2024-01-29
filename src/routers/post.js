@@ -4,6 +4,7 @@ const queryConnect = require('../modules/queryConnect');
 const makeLog = require("../modules/makelog");
 const isBlank = require("../middleware/isBlank")
 const redis = require("redis").createClient();
+const upload = require("../config/multer");
 
 // 게시물 목록 불러오기 API
 router.get("/", isLogin, async (req, res, next) => {
@@ -223,32 +224,33 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
 });
 
 // 게시물 쓰기 API
-router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) => {
-    const userIdx = req.user.idx; 
-    const userId = req.user.id; 
-
+router.post("/", isLogin, upload.single("file"), isBlank('content', 'title'), async (req, res, next) => {
+    console.log("오류?")
+    const userIdx = req.user.idx;
+    const userId = req.user.id;
     const { content, title } = req.body;
-
+    const fileUrl = req.file ? req.file.location : null; // 수정된 부분
     const result = {
         success: false,
         message: "",
         data: null
     };
+
     try {
+        // 파일 업로드가 성공하면 해당 파일의 S3 URL을 가져와서 DB에 저장
         const query = {
             text: `
                 INSERT INTO 
-                    post (title, content, account_idx) 
+                    post (title, content, account_idx, image) 
                 VALUES 
-                    ($1, $2, $3)
+                    ($1, $2, $3, $4)
             `,
-            values: [title, content, userIdx],
+            values: [title, content, userIdx, fileUrl],
         };
-        
 
         const { rowCount } = await queryConnect(query);
 
-        if (rowCount == 0) {
+        if (rowCount === 0) {
             return next({
                 message: '게시물 등록 오류',
                 status: 500
@@ -261,16 +263,17 @@ router.post("/", isLogin, isBlank('content', 'title'), async (req, res, next) =>
 
         const logData = {
             ip: req.ip,
-            userId,  
+            userId,
             apiName: '/post',
             restMethod: 'POST',
-            inputData: { content, title },
+            inputData: { content, title, fileUrl }, // 수정된 부분
             outputData: result,
             time: new Date(),
         };
 
         await makeLog(req, res, logData, next);
         res.send(result);
+
     } catch (e) {
         result.message = e.message;
         return next(e);

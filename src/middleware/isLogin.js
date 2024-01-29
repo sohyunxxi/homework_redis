@@ -10,9 +10,12 @@ const isLogin = (req, res, next) => {
 
         const decoded = jwt.verify(token, process.env.SECRET_KEY);
         req.user = decoded; // 디코딩된 사용자 정보를 req.user에 추가
+        console.log(2)
 
         // 다음 미들웨어로 계속 진행
         next();
+        console.log(3)
+
     } catch (err) {
         const result = {
             success: false,
