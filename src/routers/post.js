@@ -5,6 +5,7 @@ const makeLog = require("../modules/makelog");
 const isBlank = require("../middleware/isBlank")
 const redis = require("redis").createClient();
 const upload = require("../config/multer");
+const s3 = require("../config/s3")
 
 // 게시물 목록 불러오기 API
 router.get("/", isLogin, async (req, res, next) => {
@@ -281,10 +282,9 @@ router.post("/", isLogin, upload.single("file"), isBlank('content', 'title'), as
 });
 
 // 게시물 수정하기 API
-router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, next) => {
+router.put("/:postIdx", isLogin, upload.single("file"), isBlank('content', 'title'),  async (req, res, next) => {
     const postIdx = req.params.postIdx;
-    const userIdx = req.user.idx; 
-
+    const userIdx = req.user.idx;
     const { content, title } = req.body;
 
     const result = {
@@ -292,23 +292,40 @@ router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, n
         message: "",
         data: null
     };
-    try {
-        const query = {
-            text: `
-                UPDATE 
-                    post 
-                SET 
-                    title = $1, 
-                    content = $2 
-                WHERE 
-                    idx = $3 
-                    AND account_idx = $4
-            `,
-            values: [title, content, postIdx, userIdx],
-        };
-        
 
-        const { rowCount } = await queryConnect(query);
+    try {
+        // 이전 게시물 정보 가져오기
+        const getPostQuery = {
+            text: 'SELECT * FROM post WHERE idx = $1 AND account_idx = $2',
+            values: [postIdx, userIdx],
+        };
+        const { rows: [post] } = await queryConnect(getPostQuery);
+
+        if (!post) {
+            result.message = '게시물이나 권한이 없습니다.';
+            return res.send(result);
+        }
+
+        // 새로운 이미지가 업로드된 경우 이전 이미지 삭제
+        if (req.file && post.image) {
+            const imageKey = post.image.split('/').pop(); // 이전 이미지 URL에서 파일 이름 추출
+            await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${imageKey}` }).promise();
+        }
+
+        // 파일 업로드가 성공하면 해당 파일의 S3 URL을 가져와서 DB에 저장
+        const fileUrl = req.file ? req.file.location : post.image;
+
+        // 게시물 수정
+        const updatePostQuery = {
+            text: `
+                UPDATE post 
+                SET title = $1, content = $2, image = $3 
+                WHERE idx = $4 AND account_idx = $5
+            `,
+            values: [title, content, fileUrl, postIdx, userIdx],
+        };
+
+        const { rowCount } = await queryConnect(updatePostQuery);
 
         if (rowCount > 0) {
             result.success = true;
@@ -328,52 +345,56 @@ router.put("/:postIdx", isLogin, isBlank('content', 'title'), async (req, res, n
 // 게시물 삭제하기 API
 router.delete("/:idx", isLogin, async (req, res, next) => {
     const postIdx = req.params.idx;
-    const userIdx = req.user.idx;  
-    const userId = req.user.id;   
+    const userIdx = req.user.idx;
 
     const result = {
         "success": false,
         "message": "",
         editable: false
     };
+
     try {
-        const query = {
-            text: `DELETE FROM 
-                        post 
-                    WHERE 
-                        idx = $1 AND account_idx = $2`,
+        // 해당 게시물이 존재하는지 확인
+        const checkPostQuery = {
+            text: 'SELECT * FROM post WHERE idx = $1 AND account_idx = $2',
+            values: [postIdx, userIdx],
+        };
+        const { rows: [post] } = await queryConnect(checkPostQuery);
+
+        if (!post) {
+            result.message = '게시물이나 권한이 없습니다.';
+            return res.send(result);
+        }
+
+        // 이미지가 존재하면 S3에서 이미지 삭제
+        if (post.image) {
+            const imageKey = post.image.split('/').pop(); // 이미지 URL에서 파일 이름 추출
+            const decodedKey = decodeURIComponent(imageKey); // 파일 이름 디코딩
+            await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
+        }
+
+        // 게시물 삭제
+        const deletePostQuery = {
+            text: `DELETE FROM post WHERE idx = $1 AND account_idx = $2`,
             values: [postIdx, userIdx],
         };
 
-        const { rowCount } = await queryConnect(query);
-        if (rowCount == 0) {
-            return next({
-                message: '게시물 삭제 실패. 해당 게시물이나 권한이 없습니다.',
-                status: 400
-            });
-        } 
+        const { rowCount } = await queryConnect(deletePostQuery);
 
-        result.editable = true;
-        result.success = true;
-        result.message = "게시물 삭제 성공";
+        if (rowCount > 0) {
+            result.editable = true;
+            result.success = true;
+            result.message = "게시물 삭제 성공";
+        } else {
+            result.message = '게시물 삭제 실패. 해당 게시물이나 권한이 없습니다.';
+        }
 
-        const logData = {
-            ip: req.ip,
-            userId,
-            apiName: '/post/:idx',
-            restMethod: 'DELETE',
-            inputData: {},
-            outputData: result,
-            time: new Date(),
-        };
-
-        await makeLog(req, res, logData, next);
-        res.send(result);
     } catch (e) {
-        result.message = e.message;        
+        result.message = e.message;
         return next(e);
+    } finally {
+        res.send(result);
     }
 });
 
-  
 module.exports = router
