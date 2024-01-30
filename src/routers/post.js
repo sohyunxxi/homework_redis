@@ -224,13 +224,14 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
     }
 });
 
-// 게시물 쓰기 API
-router.post("/", isLogin, upload.single("file"), isBlank('content', 'title'), async (req, res, next) => {
-    console.log("오류?")
+// 게시물 쓰기 API - 여러 개 업로드 가능
+//새로운 테이블 만들어서 (이미지 저장 테이블), 이걸 post에 가리키게 만들고, 그럼 post에서 그걸 가지고 오는거?
+//f키 설정을 잘 하기...
+router.post("/", isLogin, upload.array("file", 5), isBlank('content', 'title'), async (req, res, next) => {
     const userIdx = req.user.idx;
     const userId = req.user.id;
     const { content, title } = req.body;
-    const fileUrl = req.file ? req.file.location : null; // 수정된 부분
+    const files = req.files;
     const result = {
         success: false,
         message: "",
@@ -238,36 +239,59 @@ router.post("/", isLogin, upload.single("file"), isBlank('content', 'title'), as
     };
 
     try {
+        let imageIdxArray = [];
+
         // 파일 업로드가 성공하면 해당 파일의 S3 URL을 가져와서 DB에 저장
-        const query = {
-            text: `
-                INSERT INTO 
-                    post (title, content, account_idx, image) 
-                VALUES 
-                    ($1, $2, $3, $4)
-            `,
-            values: [title, content, userIdx, fileUrl],
+        if (files && files.length > 0) {
+            for (const file of files) {
+                const imageUrl = file.location;
+
+                // 이미지 테이블에 이미지 저장
+                const imageInsertQuery = {
+                    text: 'INSERT INTO image (image_url) VALUES ($1) RETURNING idx',
+                    values: [imageUrl]
+                };
+
+                const imageResult = await queryConnect(imageInsertQuery);
+                const imageIdx = imageResult.rows[0].idx;
+
+                imageIdxArray.push(imageIdx);
+            }
+        }
+
+        // 포스트 테이블에 게시물 등록
+        const postInsertQuery = {
+            text: 'INSERT INTO post (title, content, account_idx) VALUES ($1, $2, $3) RETURNING idx',
+            values: [title, content, userIdx]
         };
 
-        const { rowCount } = await queryConnect(query);
+        const postResult = await queryConnect(postInsertQuery);
+        const postIdx = postResult.rows[0].idx;
 
-        if (rowCount === 0) {
-            return next({
-                message: '게시물 등록 오류',
-                status: 500
-            });
+        // post_image 테이블에 이미지와 포스트 연결 정보 저장
+        for (let i = 0; i < imageIdxArray.length; i++) {
+            const imageIdx = imageIdxArray[i];
+            const order = i + 1; // 1부터 시작하도록 순차적으로 order 부여
+        
+            const postImageInsertQuery = {
+                text: 'INSERT INTO post_image (post_idx, image_idx, image_order) VALUES ($1, $2, $3)',
+                values: [postIdx, imageIdx, order]
+            };
+        
+            await queryConnect(postImageInsertQuery);
         }
+        
 
         result.success = true;
         result.message = "게시물 등록 성공";
-        result.data = rowCount;
+        result.data = postResult.rowCount;
 
         const logData = {
             ip: req.ip,
             userId,
             apiName: '/post',
             restMethod: 'POST',
-            inputData: { content, title, fileUrl }, // 수정된 부분
+            inputData: { content, title, imageIdxArray },
             outputData: result,
             time: new Date(),
         };
@@ -281,8 +305,10 @@ router.post("/", isLogin, upload.single("file"), isBlank('content', 'title'), as
     }
 });
 
+
+
 // 게시물 수정하기 API
-router.put("/:postIdx", isLogin, upload.single("file"), isBlank('content', 'title'),  async (req, res, next) => {
+router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'title'),  async (req, res, next) => {
     const postIdx = req.params.postIdx;
     const userIdx = req.user.idx;
     const { content, title } = req.body;
@@ -366,14 +392,60 @@ router.delete("/:idx", isLogin, async (req, res, next) => {
             return res.send(result);
         }
 
-        // 이미지가 존재하면 S3에서 이미지 삭제
-        if (post.image) {
-            const imageKey = post.image.split('/').pop(); // 이미지 URL에서 파일 이름 추출
-            const decodedKey = decodeURIComponent(imageKey); // 파일 이름 디코딩
-            await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
+        // post_image 테이블에서 연결된 이미지 정보 가져오기
+        const getPostImageQuery = {
+            text: 'SELECT image_idx FROM post_image WHERE post_idx = $1',
+            values: [postIdx],
+        };
+        const postImageResult = await queryConnect(getPostImageQuery);
+        console.log("postImageResult:  ", postImageResult)
+
+        if (postImageResult.rows.length > 0) {
+            // post_image에 연결된 이미지가 존재할 경우
+            console.log("이미지 존재")
+            const imageIdxArray = postImageResult.rows.map(row => row.image_idx);
+            console.log("imageIdxArray: ", imageIdxArray)
+
+            for (const imageIdx of imageIdxArray) {
+                // post_image 테이블에서 이미지 정보 먼저 삭제
+                console.log("반복문 진입")
+                console.log("imageIdx: ", imageIdx)
+                /// S3 버킷에서 이미지 삭제
+                const getImageInfoQuery = {
+                    text: 'SELECT * FROM image WHERE idx = $1',
+                    values: [imageIdx],
+                };
+                const imageInfoResult = await queryConnect(getImageInfoQuery);
+                console.log("imageInfoResult: ",imageInfoResult)
+                if (imageInfoResult.rows.length > 0) {
+                    console.log("if문 진입")
+                    const imageKey = imageInfoResult.rows[0].image_url;
+                    const decodedKey = decodeURIComponent(imageKey.split('/').pop());
+                    console.log("이미지 키: ",imageKey, "디코드 키: ",decodedKey)
+                    try {
+                        await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
+                        console.log("S3에서 이미지 삭제 성공");
+                    } catch (error) {
+                        console.error("S3에서 이미지 삭제 실패:", error);
+                    }
+                }
+                const deletePostImageQuery = {
+                    text: 'DELETE FROM post_image WHERE post_idx = $1 AND image_idx = $2',
+                    values: [postIdx, imageIdx],
+                };
+                await queryConnect(deletePostImageQuery);
+
+                // 이후 image 테이블에서 이미지 삭제
+                const deleteImageQuery = {
+                    text: 'DELETE FROM image WHERE idx = $1',
+                    values: [imageIdx],
+                };
+                await queryConnect(deleteImageQuery);
+
+            }
         }
 
-        // 게시물 삭제
+        // post 테이블에서 게시물 삭제
         const deletePostQuery = {
             text: `DELETE FROM post WHERE idx = $1 AND account_idx = $2`,
             values: [postIdx, userIdx],
@@ -393,8 +465,9 @@ router.delete("/:idx", isLogin, async (req, res, next) => {
         result.message = e.message;
         return next(e);
     } finally {
-        res.send(result);
+        return res.send(result);
     }
 });
+
 
 module.exports = router

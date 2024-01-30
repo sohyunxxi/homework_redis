@@ -8,6 +8,7 @@ const redis = require("redis").createClient();
 const uuid = require("uuid")
 const { idReq, pwReq, emailReq, nameReq, genderReq, birthReq, addressReq, telReq }= require("../config/patterns");
 
+// 로그인 API
 router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), async (req, res, next) => {
     const { id, pw } = req.body;
     const result = {
@@ -30,31 +31,26 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         const { rows } = await queryConnect(query);
 
         if (rows.length === 0) {
-            return next({
-                message: "일치하는 정보 없음",
-                status: 401
-            });
+            result.message = "일치하는 정보 없음";
+            return res.status(401).send(result);
         }
       
         await redis.connect();
 
         const prevUniqueId = await redis.get(`user:${rows[0].id}`);
-
-        // 이전 UUID가 존재하면 중복 로그인
+        console.log("prevUniqueId: ",prevUniqueId)
         if (prevUniqueId) {
             console.log("중복로그인임.");
             await redis.DEL(`user:${rows[0].id}`);
             console.log("기존 uid 삭제.");
         }
-        
-        // 새로운 UUID 생성
+
         const uniqueId = uuid.v4();
-        // 로그인 중복 방지를 위해 이전에 저장된 UUID 삭제
-        await redis.DEL(`user:${rows[0].id}`);
-        console.log("새로운 uid 생성")
-        // 현재 로그인에 대한 UUID 저장
-        await redis.set(`user:${rows[0].id}`, uniqueId); // 새로 uid 저장
-        await redis.EXPIRE(`user:${rows[0].id}`, 60000); // 10분 유효
+        console.log("새로운 uid 생성");
+
+        await redis.set(`user:${rows[0].id}`, uniqueId);
+        console.log("uniqueId: ",uniqueId)
+        await redis.EXPIRE(`user:${rows[0].id}`, 600000); // 10분 유효
 
         const token = jwt.sign(
             {
@@ -94,11 +90,12 @@ router.post('/login', checkPattern(idReq, 'id'), checkPattern(pwReq, 'pw'), asyn
         console.error('로그인 오류: ', error);
         result.message = '로그인 오류 발생';
         result.error = error;
-        next(error);
+        return res.status(500).send(result);
     } finally {
         await redis.disconnect();
     }
 });
+
 
 
 // 로그인 수 API
@@ -168,8 +165,12 @@ router.post('/logout', isLogin, async (req, res, next) => {
     };
     // Redis에서 사용자 ID 제거
     await redis.connect();
-    await redis.del(`user:${userId}`);
-
+    
+    const prevUniqueId = await redis.get(`user:${userId}`);
+    console.log("prevUniqueId: ",prevUniqueId)
+    
+    await redis.DEL(`user:${userId}`);
+    
     const logData = {
         ip: req.ip,
         userId: userId,

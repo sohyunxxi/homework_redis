@@ -1,11 +1,13 @@
 const multer = require("multer");
 const multerS3 = require("multer-s3");
-const path = require("path");
 const s3 = require("./s3");
 console.log(4)
 
 const storage = multerS3({
   s3: s3,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB 제한
+  },
   bucket: "sohyunxxistageus",
   acl: "public-read", // 파일 접근 권한 설정
   key: function (req, file, cb) {
