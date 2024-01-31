@@ -359,29 +359,41 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
         }
         console.log("실행중 1.");
 
-        // 삭제할 이미지 처리
-        console.log("deleteImageUrl: ",deleteImageUrl)
-        const deleteImageUrlArray = Array.isArray(deleteImageUrl) ? deleteImageUrl : [deleteImageUrl];
-        console.log("deleteImageUrlArray: ",deleteImageUrlArray)
+        console.log("deleteImageUrl: ", deleteImageUrl);
+
+        // deleteImageUrl을 배열로 변환하고 추가 문자를 제거합니다.
+        const deleteImageUrlArray = Array.isArray(deleteImageUrl)
+        ? deleteImageUrl.map(url => url.trim())
+        : [deleteImageUrl.trim()];
+
+        console.log("deleteImageUrlArray: ", deleteImageUrlArray);
 
         if (deleteImageUrlArray.length > 0) {
-            for (const deleteImageUrl of deleteImageUrlArray) {
-                console.log("실행중 2.");
-                console.log("deleteImageUrl: ",deleteImageUrl)
+        for (const deleteImageUrl of deleteImageUrlArray) {
+            console.log("실행중 2.");
+            console.log("deleteImageUrl: ", deleteImageUrl);
 
-                // 삭제할 이미지의 S3 URL 가져오기
-                const getImageUrlQuery = {
-                    text: 'SELECT idx FROM image WHERE image_url = $1',
-                    values: [deleteImageUrl],
-                };
-                console.log("실행중 3.");
-                const imageUrlResult = await queryConnect(getImageUrlQuery);
-                console.log("실행중 4.");
-                console.log("imageUrlResult.rows[0]: ",imageUrlResult.rows[0])
-                const imageIdxToDelete = imageUrlResult.rows[0].idx;
-                console.log("imageIdxToDelete: ",imageIdxToDelete)
-                console.log("실행중 5.");
+            // deleteImageUrl에서 추가 문자를 제거합니다.
+            const cleanedDeleteImageUrl = deleteImageUrl.trim();
 
+            // 삭제할 이미지의 S3 URL 가져오기
+            const getImageUrlQuery = {
+            text: 'SELECT idx FROM image WHERE image_url = $1',
+            values: [cleanedDeleteImageUrl],
+            };
+
+            console.log("실행중 3.");
+            const imageUrlResult = await queryConnect(getImageUrlQuery);
+
+            console.log("실행중 4.");
+            console.log("imageUrlResult.rows[0]: ", imageUrlResult.rows[0]);
+
+            if (imageUrlResult.rows[0]) {
+            const imageIdxToDelete = imageUrlResult.rows[0].idx;
+            console.log("imageIdxToDelete: ", imageIdxToDelete);
+            console.log("실행중 5.");
+            // 나머지 로직 계속 진행
+            
                 // S3에서 이미지 삭제
                 await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${deleteImageUrl}` }).promise();
         
@@ -404,6 +416,10 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                     values: [postIdx, imageIdxToDelete],
                 };
                 await queryConnect(updateImageOrderQuery);
+            } else {
+                console.log("deleteImageUrl에 대한 이미지를 찾을 수 없습니다:", cleanedDeleteImageUrl);
+                // 이미지를 찾을 수 없는 경우 처리
+                }
             } //반복문 종료
 
             // 삭제하고 남은 이미지 조회
@@ -529,7 +545,6 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
 
     } catch (e) {
         result.message = e.message;
-        return next(e)
     } finally {
         return res.send(result);
     }
