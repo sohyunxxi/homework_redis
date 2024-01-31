@@ -104,7 +104,7 @@ router.get("/search", isLogin, async (req, res, next) => {
             result.message = "게시물 없음."
         } else {
             result.data.searchPost = rowCount
-            result.message = `게시물 있음, ${rowCount}개의 게시물이 검색되었습니다.`
+            result.message = `게시물 있음, ${rowCount}개의 게시물이 검색되었습니다.${rows}`
         }
         const logData = {
             ip: req.ip,
@@ -225,8 +225,6 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
 });
 
 // 게시물 쓰기 API - 여러 개 업로드 가능
-//새로운 테이블 만들어서 (이미지 저장 테이블), 이걸 post에 가리키게 만들고, 그럼 post에서 그걸 가지고 오는거?
-//f키 설정을 잘 하기...
 router.post("/", isLogin, upload.array("file", 5), isBlank('content', 'title'), async (req, res, next) => {
     const userIdx = req.user.idx;
     const userId = req.user.id;
@@ -308,10 +306,15 @@ router.post("/", isLogin, upload.array("file", 5), isBlank('content', 'title'), 
 
 
 // 게시물 수정하기 API
-router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'title'),  async (req, res, next) => {
+// order에 새로 추가한 이미지들은 순서를 정해서 넣고, 만약 순서를 정해서 넣지 않으면 원래 정해져 있는 순서에...
+// 삭제할 이미지 번호를 받아오고(예외처리 필요-이미지 개수에 맞지 않게 번호를 지정하는 경우), 추가할 이미지는 이미지 옆에 번호 추가해서 보내기
+// 삭제하지 않는 이미지는 그대로 순서 유지, 만약 번호가 겹치면 기존 이미지 뒤 순서로 새로 추가하는 이미지 저장하기 
+// 추가하는 이미지 정보와 이미지 순서의 개수가 맞는지
+router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'title'), async (req, res, next) => {
     const postIdx = req.params.postIdx;
     const userIdx = req.user.idx;
-    const { content, title } = req.body;
+    const { content, title, newImageOrder, originalImageOrder, deleteImageUrl } = req.body;
+    const files = req.files; //새로 추가할 이미지들
 
     const result = {
         success: false,
@@ -325,6 +328,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
             text: 'SELECT * FROM post WHERE idx = $1 AND account_idx = $2',
             values: [postIdx, userIdx],
         };
+
         const { rows: [post] } = await queryConnect(getPostQuery);
 
         if (!post) {
@@ -332,10 +336,75 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
             return res.send(result);
         }
 
-        // 새로운 이미지가 업로드된 경우 이전 이미지 삭제
-        if (req.file && post.image) {
-            const imageKey = post.image.split('/').pop(); // 이전 이미지 URL에서 파일 이름 추출
-            await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${imageKey}` }).promise();
+        // 게시물에 있는 이미지 정보들 가져오기
+        const getPostImagesQuery = {
+            text: 'SELECT image_idx, image_order FROM post_image WHERE post_idx = $1 ORDER BY image_order',
+            values: [postIdx],
+        };
+        const postImagesResult = await queryConnect(getPostImagesQuery);
+
+        //게시물 이미지 순서에 맞게 map으로 정렬해서 가져오기 (map 함수를 사용하여 배열로 변환하고, 배열의 각 요소를 객체로 만듦)
+        const imageIdxOrderArray = postImagesResult.rows.map(row => ({ image_idx: row.image_idx, image_order: row.image_order }));
+
+        // 삭제할 이미지 처리
+        if (deleteImageIds && deleteImageIds.length > 0) {
+            for (const deleteImageId of deleteImageIds) {
+                // 삭제할 이미지의 S3 URL 가져오기
+                const getImageUrlQuery = {
+                    text: 'SELECT image_url FROM image WHERE idx = $1',
+                    values: [deleteImageId],
+                };
+                const imageUrlResult = await queryConnect(getImageUrlQuery);
+                const imageUrlToDelete = imageUrlResult.rows[0].image_url;
+
+                // S3에서 이미지 삭제
+                const imageKey = imageUrlToDelete.split('/').pop();
+                await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${imageKey}` }).promise();
+
+                // post_image 및 image 테이블에서 이미지 삭제
+                const deleteImageQuery = {
+                    text: 'DELETE FROM post_image WHERE post_idx = $1 AND image_idx = $2',
+                    values: [postIdx, deleteImageId],
+                };
+                await queryConnect(deleteImageQuery);
+
+                const deleteImageInfoQuery = {
+                    text: 'DELETE FROM image WHERE idx = $1',
+                    values: [deleteImageId],
+                };
+                await queryConnect(deleteImageInfoQuery);
+            }
+        }
+
+        // 새로운 이미지 추가 및 순서 변경 처리
+        if (order && order.length > 0) {
+            for (const orderItem of order) {
+                const { image_idx, new_order } = orderItem;
+
+                // 이미지 배열이 다 차서 못 넣는 경우 예외 처리
+                if (imageIdxOrderArray.length >= 5) {
+                    result.message = "이미지 배열이 다 차서 더 이상 이미지를 추가할 수 없습니다.";
+                    //return res.send(result);
+                }
+
+                // 기존 이미지 순서 변경
+                const existingImage = imageIdxOrderArray.find(item => item.image_idx === image_idx);
+                if (existingImage) {
+                    const updateImageOrderQuery = {
+                        text: 'UPDATE post_image SET image_order = $1 WHERE post_idx = $2 AND image_idx = $3',
+                        values: [new_order, postIdx, image_idx],
+                    };
+                    await queryConnect(updateImageOrderQuery);
+                } else {
+                    // 새로운 이미지 추가
+                    const newImageOrder = imageIdxOrderArray.length + 1; // 기존 이미지 뒤에 추가
+                    const insertNewImageQuery = {
+                        text: 'INSERT INTO post_image (post_idx, image_idx, image_order) VALUES ($1, $2, $3)',
+                        values: [postIdx, image_idx, newImageOrder],
+                    };
+                    await queryConnect(insertNewImageQuery);
+                }
+            }
         }
 
         // 파일 업로드가 성공하면 해당 파일의 S3 URL을 가져와서 DB에 저장
@@ -343,11 +412,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
 
         // 게시물 수정
         const updatePostQuery = {
-            text: `
-                UPDATE post 
-                SET title = $1, content = $2, image = $3 
-                WHERE idx = $4 AND account_idx = $5
-            `,
+            text: 'UPDATE post SET title = $1, content = $2, image = $3 WHERE idx = $4 AND account_idx = $5',
             values: [title, content, fileUrl, postIdx, userIdx],
         };
 
@@ -358,7 +423,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
             result.message = "업데이트 성공";
         } else {
             result.success = false;
-            result.message = "해당 게시물이나 권한이 없습니다.";
+            result.message = "게시물 업데이트 실패.";
         }
 
     } catch (e) {
