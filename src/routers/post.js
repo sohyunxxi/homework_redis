@@ -359,84 +359,89 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
         }
         console.log("실행중 1.");
 
-        console.log("deleteImageUrl: ", deleteImageUrl);
-
-        // deleteImageUrl을 배열로 변환하고 추가 문자를 제거합니다.
-        const deleteImageUrlArray = Array.isArray(deleteImageUrl)
-        ? deleteImageUrl.map(url => url.trim())
-        : [deleteImageUrl.trim()];
-
-        console.log("deleteImageUrlArray: ", deleteImageUrlArray);
-
-        if (deleteImageUrlArray.length > 0) {
-        for (const deleteImageUrl of deleteImageUrlArray) {
-            console.log("실행중 2.");
+        if(deleteImageUrl && deleteImageUrl.length>0){
             console.log("deleteImageUrl: ", deleteImageUrl);
 
-            // deleteImageUrl에서 추가 문자를 제거합니다.
-            const cleanedDeleteImageUrl = deleteImageUrl.trim();
-
-            // 삭제할 이미지의 S3 URL 가져오기
-            const getImageUrlQuery = {
-            text: 'SELECT idx FROM image WHERE image_url = $1',
-            values: [cleanedDeleteImageUrl],
-            };
-
-            console.log("실행중 3.");
-            const imageUrlResult = await queryConnect(getImageUrlQuery);
-
-            console.log("실행중 4.");
-            console.log("imageUrlResult.rows[0]: ", imageUrlResult.rows[0]);
-
-            if (imageUrlResult.rows[0]) {
-            const imageIdxToDelete = imageUrlResult.rows[0].idx;
-            console.log("imageIdxToDelete: ", imageIdxToDelete);
-            console.log("실행중 5.");
-            // 나머지 로직 계속 진행
+            // deleteImageUrl을 배열로 변환하고 추가 문자를 제거합니다.
+            const deleteImageUrlArray = Array.isArray(deleteImageUrl)
+            ? deleteImageUrl.map(url => url.trim())
+            : [deleteImageUrl.trim()];
+    
+            console.log("deleteImageUrlArray: ", deleteImageUrlArray);
+    
+            if (deleteImageUrlArray.length > 0) {
+            for (const deleteImageUrl of deleteImageUrlArray) {
+                console.log("실행중 2.");
+                console.log("deleteImageUrl: ", deleteImageUrl);
+    
+                // deleteImageUrl에서 추가 문자를 제거합니다.
+                const cleanedDeleteImageUrl = deleteImageUrl.trim();
+    
+                // 삭제할 이미지의 S3 URL 가져오기 // 굳이 필요?
+                const getImageUrlQuery = {
+                text: 'SELECT idx FROM image WHERE image_url = $1',
+                values: [cleanedDeleteImageUrl],
+                };
+    
+                console.log("실행중 3.");
+                const imageUrlResult = await queryConnect(getImageUrlQuery);
+    
+                console.log("실행중 4.");
+                console.log("imageUrlResult.rows[0]: ", imageUrlResult.rows[0]);
+    
+                if (imageUrlResult.rows[0]) {
+                const imageIdxToDelete = imageUrlResult.rows[0].idx;
+                console.log("imageIdxToDelete: ", imageIdxToDelete);
+                console.log("실행중 5.");
+                // 나머지 로직 계속 진행
+                
+                    // S3에서 이미지 삭제
+                    const imageKey = deleteImageUrl;
+                    const decodedKey = decodeURIComponent(imageKey.split('/').pop());
+                    console.log("이미지 키: ",imageKey, "디코드 키: ",decodedKey)
+                    await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
             
-                // S3에서 이미지 삭제
-                await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${deleteImageUrl}` }).promise();
-        
-                // post_image 및 image 테이블에서 이미지 삭제
-                const deleteImageQuery = {
-                    text: 'DELETE FROM post_image WHERE post_idx = $1 AND image_idx = $2',
-                    values: [postIdx, imageIdxToDelete],
+                    // post_image 및 image 테이블에서 이미지 삭제
+                    const deleteImageQuery = {
+                        text: 'DELETE FROM post_image WHERE post_idx = $1 AND image_idx = $2',
+                        values: [postIdx, imageIdxToDelete],
+                    };
+                    await queryConnect(deleteImageQuery);
+            
+                    const deleteImageInfoQuery = {
+                        text: 'DELETE FROM image WHERE idx = $1',
+                        values: [imageIdxToDelete],
+                    };
+                    await queryConnect(deleteImageInfoQuery);
+            
+                    // 삭제된 이미지의 뒤에 있는 이미지들의 image_order 조정
+                    const updateImageOrderQuery = {
+                        text: 'UPDATE post_image SET image_order = image_order - 1 WHERE post_idx = $1 AND image_order > $2',
+                        values: [postIdx, imageIdxToDelete],
+                    };
+                    await queryConnect(updateImageOrderQuery);
+                } else {
+                    console.log("deleteImageUrl에 대한 이미지를 찾을 수 없습니다:", cleanedDeleteImageUrl);
+                    // 이미지를 찾을 수 없는 경우 처리
+                    }
+                } //반복문 종료
+    
+                // 삭제하고 남은 이미지 조회
+                const getOriginalImageUrlQuery = {
+                    text: 'SELECT image_idx, image_order FROM post_image WHERE post_idx = $1',
+                    values: [postIdx],
                 };
-                await queryConnect(deleteImageQuery);
-        
-                const deleteImageInfoQuery = {
-                    text: 'DELETE FROM image WHERE idx = $1',
-                    values: [imageIdxToDelete],
-                };
-                await queryConnect(deleteImageInfoQuery);
-        
-                // 삭제된 이미지의 뒤에 있는 이미지들의 image_order 조정
-                const updateImageOrderQuery = {
-                    text: 'UPDATE post_image SET image_order = image_order - 1 WHERE post_idx = $1 AND image_order > $2',
-                    values: [postIdx, imageIdxToDelete],
-                };
-                await queryConnect(updateImageOrderQuery);
-            } else {
-                console.log("deleteImageUrl에 대한 이미지를 찾을 수 없습니다:", cleanedDeleteImageUrl);
-                // 이미지를 찾을 수 없는 경우 처리
+                const originalImageUrlResult = await queryConnect(getOriginalImageUrlQuery);
+                console.log("삭제하고 남은 이미지 조회: ",originalImageUrlResult)
+                // 남은 이미지 - 이미지 객체를 생성하고 배열에 추가 - idx, order 순
+                for (const imageInfo of originalImageUrlResult.rows) {
+                    const imageObject = {
+                        idx: imageInfo.image_idx,
+                        order: imageInfo.image_order, // 추가
+                    };
+    
+                    imageIdxArray.push(imageObject);
                 }
-            } //반복문 종료
-
-            // 삭제하고 남은 이미지 조회
-            const getOriginalImageUrlQuery = {
-                text: 'SELECT image_idx, image_order FROM post_image WHERE post_idx = $1',
-                values: [postIdx],
-            };
-            const originalImageUrlResult = await queryConnect(getOriginalImageUrlQuery);
-            console.log("삭제하고 남은 이미지 조회: ",originalImageUrlResult)
-            // 남은 이미지 - 이미지 객체를 생성하고 배열에 추가 - idx, order 순
-            for (const imageInfo of originalImageUrlResult.rows) {
-                const imageObject = {
-                    idx: imageInfo.image_idx,
-                    order: imageInfo.image_order, // 추가
-                };
-
-                imageIdxArray.push(imageObject);
             }
         }
 
