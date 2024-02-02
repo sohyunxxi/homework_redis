@@ -66,7 +66,7 @@ router.get("/", isLogin, async (req, res, next) => {
     }
 });
 
-// 게시물 검색하기 -> 제목, 내용, 작성자 통틀어 해서 바꿔오기, 따로 search 카테고리 만들어서 /search/word 등등...
+// 게시물 검색하기 
 router.get("/search", isLogin, async (req, res, next) => {
     const userIdx = req.user.idx
     const userId = req.user.id
@@ -186,7 +186,7 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
     const result = {
         success: false,
         message: "",
-        data: null
+        data: null,
     };
     try {
         const query = {
@@ -232,7 +232,7 @@ router.get("/:postIdx", isLogin, async (req, res, next) => {
     }
 });
 
-// 게시물 쓰기 API - 여러 개 업로드 가능
+// 게시물 쓰기 API - 여러 개 업로드 가능 - 5개 이상 이미지 줄때 예외처리
 router.post("/", isLogin, upload.array("file", 5), isBlank('content', 'title'), async (req, res, next) => {
     const userIdx = req.user.idx;
     const userId = req.user.id;
@@ -338,7 +338,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
     for (let i = 0; i < extractedNumbers.length; i++) {
         console.log(`extractedNumbers[${i}]: `,extractedNumbers[i]);
     }
-
+    
     if(extractedNumbers.length!==numberOfFiles){
         result.message = "추가하는 이미지 개수와 순서의 개수가 다릅니다"
         return res.send(result);
@@ -377,7 +377,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
 
         if(deleteImageUrl && deleteImageUrl.length>0){
             console.log("deleteImageUrl: ", deleteImageUrl);
-            // deleteImageUrl을 배열로 변환하고 추가 문자를 제거합니다.
+            // deleteImageUrl을 배열로 변환하고 추가 문자를 제거.
             const deleteImageUrlArray = Array.isArray(deleteImageUrl)
             ? deleteImageUrl.map(url => url.trim())
             : [deleteImageUrl.trim()];
@@ -389,7 +389,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                     console.log("실행중 2.");
                     console.log("deleteImageUrl: ", deleteImageUrl);
 
-                    // deleteImageUrl에서 추가 문자를 제거합니다.
+                    // deleteImageUrl에서 추가 문자를 제거.
                     const cleanedDeleteImageUrl = deleteImageUrl.trim();
 
                     // 삭제할 이미지의 S3 URL 가져오기 // 굳이 필요?
@@ -595,7 +595,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
         }
         console.log("imageIdxArray: ", imageIdxArray)
 
-        //이미지의 총 개수가 5개 이상이 되는 경우, 5개 이후 이미지 삭제 - 이건 기존의 이미지임
+        //이미지의 총 개수가 5개 이상이 되는 경우, 5개 이후 이미지 삭제 - 이건 기존의 이미지임 - 후처리 말고 이미지 받을 때 처리하기
         if (imageIdxArray.length > 5) {
             const selectDeleteIdxQuery = {
                 text:   `SELECT image_idx

@@ -8,3 +8,8 @@ const s3 = new aws.S3({
   });
 
   module.exports = s3
+
+  //파일로 굳이 분리하지 말기, 같이 MULTER랑 합치기
+  //CONST MULTER해서 같이 만들기
+
+  
