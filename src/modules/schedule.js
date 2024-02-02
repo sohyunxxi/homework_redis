@@ -1,4 +1,4 @@
-// schedulerModule.js
+// schedule.js
 const schedule = require('node-schedule');
 const redis = require("redis").createClient();
 const queryConnect = require('./queryConnect');

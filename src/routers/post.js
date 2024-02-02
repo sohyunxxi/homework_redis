@@ -325,16 +325,24 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
     let imageIdxArray = []; // 이미지 객체로 해서 순서와 idx 저장하기, 이후 이 개수가 5 이상이면 해당 idx 삭제
     // 문자열로 오는 경우, 쉼표로 구분된 숫자들을 배열로 변환
     const extractedNumbers = newImageOrder.split(',').map(order => parseInt(order, 10));
-
-    for (let i = 0; i < extractedNumbers.length; i++) {
-    console.log(`extractedNumbers[${i}]: `,extractedNumbers[i]);
-}
+    console.log("extractedNumbers.length: ", extractedNumbers.length)
+    const numberOfFiles = Object.keys(files).length;
+    console.log(`파일 ${numberOfFiles} 개.`);
 
     const result = {
         success: false,
         message: "",
         data: null
     };
+
+    for (let i = 0; i < extractedNumbers.length; i++) {
+        console.log(`extractedNumbers[${i}]: `,extractedNumbers[i]);
+    }
+
+    if(extractedNumbers.length!==numberOfFiles){
+        result.message = "추가하는 이미지 개수와 순서의 개수가 다릅니다"
+        return res.send(result);
+    }
 
     try {
         // 이전 게시물 정보 가져오기
@@ -403,7 +411,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                         // 나머지 로직 계속 진행
 
                         // S3에서 이미지 삭제
-                        const imageKey = deleteImageUrl;
+                        const imageKey = cleanedDeleteImageUrl;
                         const decodedKey = decodeURIComponent(imageKey.split('/').pop());
                         console.log("이미지 키: ",imageKey, "디코드 키: ",decodedKey)
                         await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
@@ -414,7 +422,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                             values: [postIdx, imageIdxToDelete],
                         };
                         await queryConnect(deleteImageQuery);
-                
+
                         const deleteImageInfoQuery = {
                             text: 'DELETE FROM image WHERE idx = $1',
                             values: [imageIdxToDelete],
@@ -442,15 +450,19 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                 const originalImageUrlResult = await queryConnect(getOriginalImageUrlQuery);
 
                 console.log("삭제하고 남은 이미지 조회: ",originalImageUrlResult)
+
                 // 남은 이미지 - 이미지 객체를 생성하고 배열에 추가 - idx, order 순
-                for (const imageInfo of originalImageUrlResult.rows) {
-                    const imageObject = {
-                        idx: imageInfo.image_idx,
-                        order: imageInfo.image_order, // 추가
-                    };
-                    imageIdxArray.push(imageObject);
-                }
-                console.log("삭제 후 이미지 배열 imageIdxArray: ",imageIdxArray)
+                const remainingImages = originalImageUrlResult.rows.map(imageInfo => ({
+                    idx: imageInfo.image_idx,
+                    order: imageInfo.image_order,
+                }));
+
+                // 기존에 존재하는 이미지 배열에서 제거
+                imageIdxArray = remainingImages.slice();
+
+                console.log("삭제하고 남은 배열 조회: ", imageIdxArray)
+                
+             
             }
         }
         // 새로운 이미지 추가하기
@@ -468,8 +480,10 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                 console.log("이미지 배열이 다 차서 더 이상 이미지를 추가할 수 없습니다.");
             } else {
                 for (const [i, file] of files.entries()) {
+                    console.log("진입 완료")
                     const imageUrl = file.location;
-    
+                    console.log("imageUrl: ", imageUrl)
+
                     // 이미지 테이블에 이미지 저장
                     const imageInsertQuery = {
                         text: 'INSERT INTO image (image_url) VALUES ($1) RETURNING idx',
@@ -478,6 +492,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
     
                     const imageResult = await queryConnect(imageInsertQuery);
                     const imageIdx = imageResult.rows[0].idx;
+
                     console.log(extractedNumbers)
                     
                     console.log("문제2");
@@ -494,7 +509,8 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                     if (existingImage) {
                         console.log("문제4-중복이미지")
                         //새로추가하는 이미지랑 원래 기존에 있던 이미지 순서가 겹치는 경우
-    
+                        console.log("imageIdxArray: ", imageIdxArray)
+
                         // 추가된 이미지의 뒤에 있는 이미지들의 image_order 조정 - if문 이후에?
                         const checkImageOrderQuery = {
                             text: 'UPDATE post_image SET image_order = image_order + 1 WHERE post_idx = $1 AND image_order > $2',
@@ -502,13 +518,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
                         };
 
                         await queryConnect(checkImageOrderQuery);
-
-                        const updatedImageOrder = extractedNumbers[i] + 1;
-                        imageIdxArray.forEach(imageObj => {
-                            if (imageObj.order > extractedNumbers[i]) {
-                                imageObj.order = updatedImageOrder;
-                            }
-                        });
+                        console.log("imageIdxArray: ", imageIdxArray)
 
                         console.log("문제6")
                         const updateImageOrderQuery = {
@@ -531,38 +541,113 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
     
                     } else {//겹치지 않는 경우 - 문제발생
                         // 새로운 이미지 추가 -> image 테이블, post_image 테이블
-                        console.log("문제555")
-                        const insertNewImageQuery = {
-                            text: 'INSERT INTO post_image (post_idx, image_idx, image_order) VALUES ($1, $2, $3)',
-                            values: [postIdx, imageIdx, extractedNumbers[i]],
-                        };
-                        console.log("문제6")
+                        if(extractedNumbers[i]==0){//첫번째 자리에 이미지를 삽입할려고 하는 경우 -> 한칸씩 뒤로 미루기
+                            const updateImageOrderQuery = {
+                                text: 'UPDATE post_image SET image_order = image_order + 1 WHERE post_idx = $1 AND image_order > $2',
+                                values: [postIdx, extractedNumbers[i]],
+                            };
     
-                        await queryConnect(insertNewImageQuery);
-                        console.log("문제7")
+                            await queryConnect(updateImageOrderQuery);
+
+                            const selectImageOrderQuery = {
+                                text: 'SELECT * FROM post_image WHERE post_idx = $1',
+                                values: [postIdx],
+                            };
     
+                            const selectResult = await queryConnect(selectImageOrderQuery);
+
+                            console.log("순서 조정 후 결과: ", selectResult.rows[0])
+
+                            const insertImageOrderQuery = {
+                                text: 'INSERT INTO post_image (post_idx, image_idx, image_order) VALUES ($1, $2, $3)',
+                                values: [postIdx, imageIdx, extractedNumbers[i]+1],
+                            };
+    
+                            await queryConnect(insertImageOrderQuery);
+                            console.log("문제7")
+                            const imageObject = { // 넣지 말고 기다리기
+                                idx: imageIdx,
+                                order: extractedNumbers[i]+1, // 이미지가 배열의 몇 번째인지로 순서를 할당
+                            };
+                            console.log("문제1")
+                            imageIdxArray.push(imageObject);
+                        }else{
+                            console.log("문제555")
+                            const insertNewImageQuery = {
+                                text: 'INSERT INTO post_image (post_idx, image_idx, image_order) VALUES ($1, $2, $3)',
+                                values: [postIdx, imageIdx, extractedNumbers[i]],
+                            };
+                            console.log("문제6")
+        
+                            await queryConnect(insertNewImageQuery);
+                            console.log("문제7")
+                            const imageObject = { // 넣지 말고 기다리기
+                                idx: imageIdx,
+                                order: extractedNumbers[i], // 이미지가 배열의 몇 번째인지로 순서를 할당
+                            };
+                            console.log("문제1")
+                            imageIdxArray.push(imageObject);
+                        }
                     }
                 }
             }            
 
         }
-        // 이미지의 총 개수가 5개 이상이 되는 경우, 5개 이후 이미지 삭제 - 이건 기존의 이미지임
-        if (imageIdxArray.length > 5) {
-            // image order로 정렬
-            const sortedImageArray = imageIdxArray.sort((a, b) => a.order - b.order);
+        console.log("imageIdxArray: ", imageIdxArray)
 
-            // 5개 이후 이미지 삭제
-            const imagesToDelete = sortedImageArray.slice(5);
-            
-            // imagesToDelete에 속한 이미지의 idx를 추출하여 삭제 쿼리 실행
-            const imagesToDeleteIdxArray = imagesToDelete.map(image => image.idx);
-            
-            const deleteExcessImagesQuery = {
-                text: 'DELETE FROM post_image WHERE post_idx = $1 AND image_idx IN ($2:csv)',
-                values: [postIdx, imagesToDeleteIdxArray],
-            };
-            
-            await queryConnect(deleteExcessImagesQuery);
+        //이미지의 총 개수가 5개 이상이 되는 경우, 5개 이후 이미지 삭제 - 이건 기존의 이미지임
+        if (imageIdxArray.length > 5) {
+            const selectDeleteIdxQuery = {
+                text:   `SELECT image_idx
+                        FROM post_image
+                        WHERE post_idx = $1
+                        ORDER BY image_order ASC
+                        OFFSET 5;
+                        `,
+                values:[postIdx]
+            }
+
+            const selectDeleteIdxResult = (await queryConnect(selectDeleteIdxQuery)).rows;
+            console.log("selectDeleteIdxResult: ", selectDeleteIdxResult)
+
+            for(let i = 0; i<selectDeleteIdxResult.length;i++){
+                console.log("selectDeleteIdxResult[i]: ",selectDeleteIdxResult[i])
+                console.log("selectDeleteIdxResult[i].idx: ",selectDeleteIdxResult[i].image_idx)
+                
+                const selectDeleteIdxQuery = {
+                    text:   `SELECT image_url
+                            FROM image
+                            WHERE idx = $1
+                            `,
+                    values:[selectDeleteIdxResult[i].image_idx]
+                }
+                const imageUrlResult = await queryConnect(selectDeleteIdxQuery);
+
+                console.log("Image URL:", imageUrlResult.rows[0].image_url);
+
+                const imageKey = imageUrlResult.rows[0].image_url;
+                const decodedKey = decodeURIComponent(imageKey.split('/').pop());
+                console.log("이미지 키: ",imageKey, "디코드 키: ",decodedKey)
+                await s3.deleteObject({ Bucket: 'sohyunxxistageus', Key: `uploads/${decodedKey}` }).promise();
+
+                const deleteImageQuery = {
+                    text: `DELETE FROM post_image
+                            WHERE post_idx = $1
+                            AND image_idx = $2 `,
+                    values: [postIdx, selectDeleteIdxResult[i].image_idx],
+                };
+                
+                await queryConnect(deleteImageQuery);
+
+                const deletePostImagesQuery = {
+                    text: `DELETE FROM image
+                            WHERE idx = $1 `,
+                    values: [selectDeleteIdxResult[i].image_idx],
+                };
+                
+                await queryConnect(deletePostImagesQuery);
+
+            }
         }
 
         // 게시물 수정 - 제목, 내용
