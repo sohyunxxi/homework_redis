@@ -312,10 +312,10 @@ router.post("/", isLogin, upload.array("file", 5), isBlank('content', 'title'), 
 });
 
 // 게시물 수정하기 API
-// order에 새로 추가한 이미지들은 순서를 정해서 넣고, 만약 순서를 정해서 넣지 않으면 원래 정해져 있는 순서에...
-// 삭제할 이미지 번호를 받아오고(예외처리 필요-이미지 개수에 맞지 않게 번호를 지정하는 경우), 추가할 이미지는 이미지 옆에 번호 추가해서 보내기
-// 삭제하지 않는 이미지는 그대로 순서 유지, 만약 번호가 겹치면 기존 이미지 뒤 순서로 새로 추가하는 이미지 저장하기 
-// 추가하는 이미지 정보와 이미지 순서의 개수가 맞는지
+// flag 을 넣어서 0,1,2 => 숫자별로 의미를 부여
+// post_image 테이블에서 image_url 추가하기
+// s3랑 multer 합치기
+
 
 router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'title'), async (req, res, next) => {
     const postIdx = req.params.postIdx;
@@ -338,7 +338,7 @@ router.put("/:postIdx", isLogin, upload.array("file", 5), isBlank('content', 'ti
     for (let i = 0; i < extractedNumbers.length; i++) {
         console.log(`extractedNumbers[${i}]: `,extractedNumbers[i]);
     }
-    
+
     if(extractedNumbers.length!==numberOfFiles){
         result.message = "추가하는 이미지 개수와 순서의 개수가 다릅니다"
         return res.send(result);
